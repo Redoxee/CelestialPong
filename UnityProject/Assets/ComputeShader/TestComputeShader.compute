@@ -1,14 +1,34 @@
 ﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSInitialization
 #pragma kernel CSMain
+
+// Initial Noise texture.
+texture2D InitialState;
 
 // Create a RenderTexture with enableRandomWrite flag and set it
 // with cs.SetTexture
 RWTexture2D<float4> Result;
 
+texture2D PreviousState;
+
+const float tSize = 256.;
+
+[numthreads(8,8,4)]
+void CSInitialization(uint3 id : SV_DispatchThreadID)
+{
+	float2 uv = float2(id.x, id.y) / float2(tSize, tSize);
+	float4 tex = InitialState[id.xy] * 2. - 1.;
+	Result[id.xy] = tex;
+}
+
 [numthreads(8,8,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
-    // TODO: insert actual code here!
+	float4 state = PreviousState[id.xy];
 
-    Result[id.xy] = float4(id.x & id.y, (id.x & 15)/15.0, (id.y & 15)/15.0, 0.0);
+	float2 diff = float2(state.xy - float2(128., 128.)) / 256.;
+	state.zw += (normalize(diff) / dot(diff, diff));
+	state.xy += state.zw;
+
+    Result[id.xy] = state;
 }
