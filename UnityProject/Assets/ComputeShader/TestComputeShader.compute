@@ -11,14 +11,16 @@ RWTexture2D<float4> Result;
 
 texture2D PreviousState;
 
-const float tSize = 256.;
+#define tSize 256.
 
 [numthreads(8,8,4)]
 void CSInitialization(uint3 id : SV_DispatchThreadID)
 {
 	float2 uv = float2(id.x, id.y) / float2(tSize, tSize);
-	float4 tex = InitialState[id.xy] * 2. - 1.;
+	float4 tex = InitialState[id.xy];
 	Result[id.xy] = tex;
+	float2 test = uv * 2 - 1;
+	Result[id.xy] = float4(test.x, test.y, 0., 1.);
 }
 
 [numthreads(8,8,1)]
@@ -26,9 +28,11 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 {
 	float4 state = PreviousState[id.xy];
 
+	float dt = .01;
+
 	float2 diff = float2(state.xy - float2(128., 128.)) / 256.;
-	state.zw += (normalize(diff) / dot(diff, diff));
-	state.xy += state.zw;
+	state.zw += (normalize(diff) / dot(diff, diff)) * dt;
+	state.xy += state.zw * dt;
 
     Result[id.xy] = state;
 }
