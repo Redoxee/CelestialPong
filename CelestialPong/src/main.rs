@@ -1,3 +1,6 @@
+// based on https://github.com/Markek1/Collision-Simulator
+// other usefull link https://arrowinmyknee.com/2021/03/15/some-math-about-capsule-collision/
+
 use std::f32::consts::PI;
 
 use macroquad::{color, prelude::*};
