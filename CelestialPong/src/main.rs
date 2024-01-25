@@ -118,7 +118,8 @@ impl Capsule {
     }
 }
 
-static mut BALL_POS_INDEX : usize = 0;
+static mut BALL_POS_READ : usize = 0;
+static mut BALL_POS_WRITE : usize = 1;
 
 #[derive(Clone, Copy, Debug)]
 struct Ball {
@@ -132,9 +133,10 @@ struct Ball {
 impl Ball {
     fn new(position:Vec2, velocity:Vec2, radius:f32, mass:f32, color:Color) -> Ball {
         let mut positions : [Vec2; 2] = Default::default();
-        
+
         unsafe {
-            positions[BALL_POS_INDEX] = position;
+            positions[BALL_POS_READ] = position;
+            positions[BALL_POS_WRITE] = position;
         }
 
         Ball {
@@ -148,13 +150,13 @@ impl Ball {
 
     fn pos(&self) -> Vec2 {
         unsafe {
-            self.positions[BALL_POS_INDEX]
+            self.positions[BALL_POS_READ]
         }
     }
 
     fn set_pos(&mut self, new_pos : Vec2) {
         unsafe {
-            self.positions[BALL_POS_INDEX] = new_pos;
+            self.positions[BALL_POS_WRITE] = new_pos;
         }
     }
 
