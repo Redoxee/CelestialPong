@@ -1,7 +1,7 @@
 // based on https://github.com/Markek1/Collision-Simulator
 // other usefull link https://arrowinmyknee.com/2021/03/15/some-math-about-capsule-collision/
 
-use std::f32::consts::PI;
+use std::{f32::consts::PI, sync::PoisonError};
 
 use macroquad::{color, prelude::*};
 use rand::Rng;
@@ -118,57 +118,89 @@ impl Capsule {
     }
 }
 
+static mut BALL_POS_INDEX : usize = 0;
+
 #[derive(Clone, Copy, Debug)]
 struct Ball {
-    pos: Vec2,
-    v: Vec2,
-    r: f32,
+    positions: [Vec2;2],
+    velocity: Vec2,
+    radius: f32,
     mass: f32,
     color: Color,
 }
 
 impl Ball {
+    fn new(position:Vec2, velocity:Vec2, radius:f32, mass:f32, color:Color) -> Ball {
+        let mut positions : [Vec2; 2] = Default::default();
+        
+        unsafe {
+            positions[BALL_POS_INDEX] = position;
+        }
+
+        Ball {
+            positions,
+            velocity,
+            radius,
+            mass,
+            color
+        }
+    }
+
+    fn pos(&self) -> Vec2 {
+        unsafe {
+            self.positions[BALL_POS_INDEX]
+        }
+    }
+
+    fn set_pos(&mut self, new_pos : Vec2) {
+        unsafe {
+            self.positions[BALL_POS_INDEX] = new_pos;
+        }
+    }
+
     fn draw(&self) {
-        draw_circle(self.pos.x, self.pos.y, self.r, self.color);
+        let pos = self.pos();
+        draw_circle(pos.x, pos.y, self.radius, self.color);
     }
 
     fn update(&mut self, dt: f32, acc: Vec2) {
-        self.v += acc * dt;
+        self.velocity += acc * dt;
+        let mut pos = self.pos();
 
-        if self.pos.x < self.r && self.v.x < 0.
-            || WINDOW_SIZE.x - self.pos.x < self.r && self.v.x > 0.
+        if pos.x < self.radius && self.velocity.x < 0.
+            || WINDOW_SIZE.x - pos.x < self.radius && self.velocity.x > 0.
         {
-            self.v.x *= -1.;
+            self.velocity.x *= -1.;
         }
         
-        if self.pos.y < self.r && self.v.y < 0.
-            || WINDOW_SIZE.y - self.pos.y < self.r && self.v.y > 0.
+        if pos.y < self.radius && self.velocity.y < 0.
+            || WINDOW_SIZE.y - pos.y < self.radius && self.velocity.y > 0.
         {
-            self.v.y *= -1.;
+            self.velocity.y *= -1.;
         }
 
-        self.pos += self.v;
+        self.set_pos(pos + self.velocity);
     }
 
     fn check_collision(&self, other: &Ball) -> bool {
-        other.pos.distance(self.pos) <= other.r + self.r
+        other.pos().distance(self.pos()) <= other.radius + self.radius
     }
 
     // Does collision effect for both self and the other object
     // Based on https://www.vobarian.com/collisions/2dcollisions2.pdf
     // The individual steps from the document are commented
     fn collide(&mut self, other: &mut Ball) {
-        let pos_diff = self.pos - other.pos;
+        let pos_diff = self.pos() - other.pos();
 
         // 1
         let unit_normal = pos_diff.normalize();
         let unit_tangent = Vec2::from((-unit_normal.y, unit_normal.x));
 
         // 3
-        let v1n = self.v.dot(unit_normal);
-        let v1t = self.v.dot(unit_tangent);
-        let v2n = other.v.dot(unit_normal);
-        let v2t = other.v.dot(unit_tangent);
+        let v1n = self.velocity.dot(unit_normal);
+        let v1t = self.velocity.dot(unit_tangent);
+        let v2n = other.velocity.dot(unit_normal);
+        let v2t = other.velocity.dot(unit_tangent);
 
         // 5
         let new_v1n =
@@ -187,9 +219,9 @@ impl Ball {
         let final_v2 = final_v2n + final_v2t;
 
         // The if statement makes them not get stuck in each other
-        if (self.v - other.v).dot(self.pos - other.pos) < 0. {
-            self.v = final_v1;
-            other.v = final_v2;
+        if (self.velocity - other.velocity).dot(self.pos() - other.pos()) < 0. {
+            self.velocity = final_v1;
+            other.velocity = final_v2;
         }
     }
 }
@@ -210,18 +242,18 @@ async fn main() {
 
     for i in 0..n_balls {
         let r = 2.;
-        balls.push(Ball {
-            pos: Vec2::from((r * 2. + r * 2. * i as f32, r * 2. + r * i as f32)),
-            v: Vec2::from((rng.gen::<f32>() * 4. - 2., rng.gen::<f32>() * 4. - 2.)),
-            r: r,
-            mass: PI * r.powf(2.),
-            color: Color {
+        balls.push(Ball::new(
+            Vec2::from((r * 2. + r * 2. * i as f32, r * 2. + r * i as f32)),
+            Vec2::from((rng.gen::<f32>() * 4. - 2., rng.gen::<f32>() * 4. - 2.)),
+            r,
+            PI * r.powf(2.),
+            Color {
                 r: rng.gen::<f32>() + 0.25,
                 g: rng.gen::<f32>() + 0.25,
                 b: rng.gen::<f32>() + 0.25,
                 a: 1.,
             },
-        })
+        ))
     }
 
     // test variables
@@ -262,7 +294,7 @@ async fn main() {
 
         if is_key_down(KeyCode::S) {
             for ball in &mut balls {
-                ball.v *= 0.9;
+                ball.velocity *= 0.9;
             }
         }
 
@@ -273,14 +305,14 @@ async fn main() {
                 ball.update(dt, a);
             }
 
-            balls.sort_by(|a, b| a.pos.x.partial_cmp(&b.pos.x).unwrap());
+            balls.sort_by(|a, b| a.pos().x.partial_cmp(&b.pos().x).unwrap());
             let mut left_ball = 0;
-            let mut right_bound = balls[left_ball].pos.x + balls[left_ball].r;
+            let mut right_bound = balls[left_ball].pos().x + balls[left_ball].radius;
 
             for i in 1..balls.len() {
-                if balls[i].pos.x - balls[i].r <= right_bound {
-                    if balls[i].pos.x + balls[i].r > right_bound {
-                        right_bound = balls[i].pos.x + balls[i].r;
+                if balls[i].pos().x - balls[i].radius <= right_bound {
+                    if balls[i].pos().x + balls[i].radius > right_bound {
+                        right_bound = balls[i].pos().x + balls[i].radius;
                     }
 
                     let (left, right) = balls.split_at_mut(i);
@@ -292,7 +324,7 @@ async fn main() {
                     }
                 } else {
                     left_ball = i;
-                    right_bound = balls[i].pos.x + balls[i].r;
+                    right_bound = balls[i].pos().x + balls[i].radius;
                 }
             }
         }
@@ -301,9 +333,7 @@ async fn main() {
         
         if drawing_enabled {
             for ball in &balls {
-                if ball.pos.x < 1400. && ball.pos.y < 1000. {
-                    ball.draw();
-                }
+                ball.draw();
             }
         }
 
