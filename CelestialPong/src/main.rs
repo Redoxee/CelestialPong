@@ -7,7 +7,7 @@ use macroquad::{color, prelude::*};
 use rand::Rng;
 extern crate rand;
 
-const WINDOW_SIZE: Vec2 = Vec2::from_array([1400., 800.]);
+const WINDOW_SIZE: Vec2 = Vec2::from_array([800., 800.]);
 
 fn window_config() -> Conf {
     Conf {
@@ -24,14 +24,14 @@ struct Capsule {
     p1: Vec2,
     p2: Vec2,
     radius: f32,
-    color: Color
+    color: Color,
 }
 
 // From : https://arrowinmyknee.com/2021/03/15/some-math-about-capsule-collision/
 // Computes closest points C1 and C2 of S1(s)=P1+s*(Q1-P1) and
 // S2(t)=P2+t*(Q2-P2), returning s and t. Function result is squared
 // distance between between S1(s) and S2(t)
-fn distance_point_segment_squared(p1 : Vec2, q1 : Vec2, p2 : Vec2, q2 : Vec2) -> f32 {
+fn distance_point_segment_squared(p1: Vec2, q1: Vec2, p2: Vec2, q2: Vec2) -> f32 {
     let d1 = q1 - p1; // Direction vector of segment S1
     let d2 = q2 - p2; // Direction vector of segment S2
     let r = p1 - p2;
@@ -40,7 +40,7 @@ fn distance_point_segment_squared(p1 : Vec2, q1 : Vec2, p2 : Vec2, q2 : Vec2) ->
     let f = Vec2::dot(d2, r);
     let mut s;
     let mut t;
-    
+
     // Check if either or both segments degenerate into points
     if a <= f32::EPSILON && e <= f32::EPSILON {
         // Both segments degenerate into points
@@ -62,7 +62,7 @@ fn distance_point_segment_squared(p1 : Vec2, q1 : Vec2, p2 : Vec2, q2 : Vec2) ->
             // The general nondegenerate case starts here
             let b = Vec2::dot(d1, d2);
             let denom = a * e - b * b; // Always nonnegative
-            
+
             // If segments not parallel, compute closest point on L1 to L2 and
             // clamp to segment S1. Else pick arbitrary s (here 0)
             if denom != 0. {
@@ -73,7 +73,7 @@ fn distance_point_segment_squared(p1 : Vec2, q1 : Vec2, p2 : Vec2, q2 : Vec2) ->
 
             // Compute point on L2 closest to S1(s) using
             // t = Dot((P1 + D1*s) - P2,D2) / Dot(D2,D2) = (b*s + f) / e
-            t = (b*s + f) / e;
+            t = (b * s + f) / e;
             // If t in [0,1] done. Else clamp t, recompute s for the new value
             // of t using s = Dot((P2 + D2*t) - P1,D1) / Dot(D1,D1)= (t*b - c) / a
             // and clamp s to [0, 1]
@@ -93,12 +93,12 @@ fn distance_point_segment_squared(p1 : Vec2, q1 : Vec2, p2 : Vec2, q2 : Vec2) ->
 }
 
 impl Capsule {
-    fn new(p1 : Vec2, p2 : Vec2, r : f32, color : Color) -> Capsule {
+    fn new(p1: Vec2, p2: Vec2, r: f32, color: Color) -> Capsule {
         return Capsule {
-            p1 : p1,
-            p2 : p2,
-            radius : r,
-            color : color
+            p1: p1,
+            p2: p2,
+            radius: r,
+            color: color,
         };
     }
 
@@ -107,23 +107,37 @@ impl Capsule {
         draw_circle_lines(self.p2.x, self.p2.y, self.radius, 2., self.color);
         let dir = (self.p2 - self.p1).normalize();
         let cr = vec2(dir.y, -dir.x) * self.radius;
-        draw_line(self.p1.x + cr.x, self.p1.y + cr.y, self.p2.x + cr.x, self.p2.y + cr.y, 2., self.color);
-        draw_line(self.p1.x - cr.x, self.p1.y - cr.y, self.p2.x - cr.x, self.p2.y - cr.y, 2., self.color);
+        draw_line(
+            self.p1.x + cr.x,
+            self.p1.y + cr.y,
+            self.p2.x + cr.x,
+            self.p2.y + cr.y,
+            2.,
+            self.color,
+        );
+        draw_line(
+            self.p1.x - cr.x,
+            self.p1.y - cr.y,
+            self.p2.x - cr.x,
+            self.p2.y - cr.y,
+            2.,
+            self.color,
+        );
     }
 
-    fn overlap(caps1 : Capsule, caps2 : Capsule) -> bool {
+    fn overlap(caps1: Capsule, caps2: Capsule) -> bool {
         let dist = distance_point_segment_squared(caps1.p1, caps1.p2, caps2.p1, caps2.p2);
         let r = caps1.radius + caps2.radius;
         return dist <= (r * r);
     }
 }
 
-static mut BALL_POS_READ : usize = 0;
-static mut BALL_POS_WRITE : usize = 1;
+static mut BALL_POS_CURRENT: usize = 0;
+static mut BALL_POS_NEXT: usize = 1;
 
 #[derive(Clone, Copy, Debug)]
 struct Ball {
-    positions: [Vec2;2],
+    positions: [Vec2; 2],
     velocity: Vec2,
     radius: f32,
     mass: f32,
@@ -131,12 +145,12 @@ struct Ball {
 }
 
 impl Ball {
-    fn new(position:Vec2, velocity:Vec2, radius:f32, mass:f32, color:Color) -> Ball {
-        let mut positions : [Vec2; 2] = Default::default();
+    fn new(position: Vec2, velocity: Vec2, radius: f32, mass: f32, color: Color) -> Ball {
+        let mut positions: [Vec2; 2] = Default::default();
 
         unsafe {
-            positions[BALL_POS_READ] = position;
-            positions[BALL_POS_WRITE] = position;
+            positions[BALL_POS_CURRENT] = position;
+            positions[BALL_POS_NEXT] = position;
         }
 
         Ball {
@@ -144,19 +158,21 @@ impl Ball {
             velocity,
             radius,
             mass,
-            color
+            color,
         }
     }
 
     fn pos(&self) -> Vec2 {
-        unsafe {
-            self.positions[BALL_POS_READ]
-        }
+        unsafe { self.positions[BALL_POS_CURRENT] }
     }
 
-    fn set_pos(&mut self, new_pos : Vec2) {
+    fn pos_next(&self) -> Vec2 {
+        unsafe { self.positions[BALL_POS_NEXT] }
+    }
+
+    fn set_pos(&mut self, new_pos: Vec2) {
         unsafe {
-            self.positions[BALL_POS_WRITE] = new_pos;
+            self.positions[BALL_POS_NEXT] = new_pos;
         }
     }
 
@@ -174,7 +190,7 @@ impl Ball {
         {
             self.velocity.x *= -1.;
         }
-        
+
         if pos.y < self.radius && self.velocity.y < 0.
             || WINDOW_SIZE.y - pos.y < self.radius && self.velocity.y > 0.
         {
@@ -228,7 +244,7 @@ impl Ball {
     }
 }
 
-fn draw_cross(p : Vec2, color:Color) {
+fn draw_cross(p: Vec2, color: Color) {
     draw_line(p.x - 5., p.y - 5., p.x + 5., p.y + 5., 1., color);
     draw_line(p.x - 5., p.y + 5., p.x + 5., p.y - 5., 1., color);
 }
@@ -239,13 +255,17 @@ async fn main() {
     let mut paused = true;
     let mut drawing_enabled = true;
 
-    let n_balls = 250;
+    const n_balls: usize = 200;
     let mut balls = Vec::with_capacity(n_balls);
+
+    const FPS_FRAMES: usize = 100;
+    let mut fps: [f32; FPS_FRAMES] = [0.; FPS_FRAMES];
+    let mut fps_index: usize = 0;
 
     for i in 0..n_balls {
         let r = 2.;
         balls.push(Ball::new(
-            Vec2::from((r * 2. + r * 2. * i as f32, r * 2. + r * i as f32)),
+            Vec2::from((512., 512.)),
             Vec2::from((rng.gen::<f32>() * 4. - 2., rng.gen::<f32>() * 4. - 2.)),
             r,
             PI * r.powf(2.),
@@ -300,11 +320,31 @@ async fn main() {
             }
         }
 
-        if !paused {
-            let dt = get_frame_time();
+        let dt = get_frame_time();
+        fps[fps_index] = dt;
+        fps_index = (fps_index + 1) % FPS_FRAMES;
 
+        clear_background(BLACK);
+        let mean_fps = Iterator::sum::<f32>(fps.iter()) / FPS_FRAMES as f32;
+        draw_text_ex(
+            &format!("fps : {}", mean_fps),
+            32.,
+            32.,
+            TextParams {
+                font_size: 15,
+                ..Default::default()
+            },
+        );
+
+        if !paused {
             for ball in balls.iter_mut() {
                 ball.update(dt, a);
+            }
+
+            unsafe {
+                let temp = BALL_POS_CURRENT;
+                BALL_POS_CURRENT = BALL_POS_NEXT;
+                BALL_POS_NEXT = temp;
             }
 
             balls.sort_by(|a, b| a.pos().x.partial_cmp(&b.pos().x).unwrap());
@@ -331,14 +371,13 @@ async fn main() {
             }
         }
 
-        clear_background(BLACK);
-        
         if drawing_enabled {
             for ball in &balls {
                 ball.draw();
             }
         }
 
+        /*
         if is_mouse_button_pressed(MouseButton::Left) {
             (spx, spy) = mouse_position();
         }
@@ -359,7 +398,7 @@ async fn main() {
 
         caps1.draw();
         caps2.draw();
-        
+
         match Capsule::overlap(caps1, caps2) {
             true => {
                 draw_text("overlap", 50., 50., 18., color::BEIGE);
@@ -389,6 +428,7 @@ async fn main() {
             }
             _ => {}
         };
+        */
 
         next_frame().await
     }
