@@ -1,4 +1,4 @@
-use macroquad::{color::colors, prelude::*};
+use macroquad::{color::{self, colors}, prelude::*};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Rect {
@@ -6,6 +6,11 @@ pub struct Rect {
     pub y: f32,
     pub half_width: f32,
     pub half_height: f32,
+
+    left: f32,
+    right: f32,
+    up: f32,
+    down: f32,
 }
 
 impl Rect {
@@ -15,6 +20,10 @@ impl Rect {
             y,
             half_width: width / 2.,
             half_height: height / 2.,
+            left: x-width/2.,
+            right: x+width/2.,
+            up: y-height/2.,
+            down: x+height/2.,
         };
     }
     pub fn contains(&self, pos: Vec2) -> bool {
@@ -22,6 +31,10 @@ impl Rect {
             && pos.x < self.x + self.half_width
             && pos.y >= self.y - self.half_height
             && pos.y < self.y + self.half_height;
+    }
+
+    pub fn overlap(&self, other : &Rect) -> bool {
+        return !(self.right < other.left || self.left > other.right || self.up < other.down || self.down > other.up);
     }
 }
 
@@ -128,13 +141,18 @@ impl QuadTree {
     }
 
     pub fn debug_draw(&self) {
+        let color = match self.area.overlap(&Rect::new(200., 200., 130., 130.)) {
+            true=>color::BLUE,
+            false=>color::RED
+        };
+
         draw_rectangle_lines(
             self.area.x - self.area.half_width,
             self.area.y - self.area.half_height,
             self.area.half_width * 2.,
             self.area.half_height * 2.,
             2.,
-            colors::RED,
+            color,
         );
 
         match &self.north_east {
