@@ -7,6 +7,8 @@ use macroquad::{color, prelude::*};
 use rand::Rng;
 extern crate rand;
 
+mod quad_tree;
+use crate::quad_tree::*;
 const WINDOW_SIZE: Vec2 = Vec2::from_array([800., 800.]);
 
 fn window_config() -> Conf {
@@ -255,17 +257,28 @@ async fn main() {
     let mut paused = true;
     let mut drawing_enabled = true;
 
-    const n_balls: usize = 200;
+    const n_balls: usize = 100;
     let mut balls = Vec::with_capacity(n_balls);
 
     const FPS_FRAMES: usize = 100;
     let mut fps: [f32; FPS_FRAMES] = [0.; FPS_FRAMES];
     let mut fps_index: usize = 0;
 
+    let tree_area = quad_tree::Rect::new(
+        WINDOW_SIZE.x / 2.,
+        WINDOW_SIZE.y / 2.,
+        WINDOW_SIZE.x,
+        WINDOW_SIZE.y,
+    );
+    let mut test_quad_tree = QuadTree::new(tree_area);
+
     for i in 0..n_balls {
         let r = 2.;
-        balls.push(Ball::new(
-            Vec2::from((512., 512.)),
+        let ball = Ball::new(
+            Vec2::from((
+                rng.gen::<f32>() * WINDOW_SIZE.x,
+                rng.gen::<f32>() * WINDOW_SIZE.y,
+            )),
             Vec2::from((rng.gen::<f32>() * 4. - 2., rng.gen::<f32>() * 4. - 2.)),
             r,
             PI * r.powf(2.),
@@ -275,7 +288,10 @@ async fn main() {
                 b: rng.gen::<f32>() + 0.25,
                 a: 1.,
             },
-        ))
+        );
+
+        balls.push(ball);
+        test_quad_tree.add(QuadTreeEntry::new(ball.pos(), i));
     }
 
     // test variables
@@ -351,6 +367,8 @@ async fn main() {
             let mut left_ball = 0;
             let mut right_bound = balls[left_ball].pos().x + balls[left_ball].radius;
 
+            test_quad_tree = QuadTree::new(tree_area);
+
             for i in 1..balls.len() {
                 if balls[i].pos().x - balls[i].radius <= right_bound {
                     if balls[i].pos().x + balls[i].radius > right_bound {
@@ -368,6 +386,9 @@ async fn main() {
                     left_ball = i;
                     right_bound = balls[i].pos().x + balls[i].radius;
                 }
+
+                let ball_pos = balls[i].pos();
+                test_quad_tree.add(QuadTreeEntry::new(ball_pos, i));
             }
         }
 
@@ -375,6 +396,8 @@ async fn main() {
             for ball in &balls {
                 ball.draw();
             }
+
+            test_quad_tree.debug_draw();
         }
 
         /*
