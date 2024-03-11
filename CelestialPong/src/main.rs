@@ -3,7 +3,10 @@
 
 use std::{f32::consts::PI, sync::PoisonError};
 
-use macroquad::{color::{self, colors}, prelude::*};
+use macroquad::{
+    color::{self, colors},
+    prelude::*,
+};
 use rand::Rng;
 extern crate rand;
 
@@ -397,17 +400,14 @@ async fn main() {
                 ball.draw();
             }
 
-            test_quad_tree.debug_draw();
+            // test_quad_tree.debug_draw();
         }
-
-        draw_rectangle_lines(200., 200., 130., 130., 4., colors::GREEN);
 
         /*
         if is_mouse_button_pressed(MouseButton::Left) {
             (spx, spy) = mouse_position();
         }
 
-        let (mpx, mpy) = mouse_position();
 
         let caps1 = Capsule::new(
             Vec2 { x: spx, y: spy },
