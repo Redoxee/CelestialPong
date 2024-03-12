@@ -140,6 +140,8 @@ impl Capsule {
 static mut BALL_POS_CURRENT: usize = 0;
 static mut BALL_POS_NEXT: usize = 1;
 
+const NB_BALLS: usize = 4;
+
 #[derive(Clone, Copy, Debug)]
 struct Ball {
     positions: [Vec2; 2],
@@ -179,6 +181,13 @@ impl Ball {
         unsafe {
             self.positions[BALL_POS_NEXT] = new_pos;
         }
+    }
+
+    fn get_collision_area(&self) -> quad_tree::Rect {
+        let p = self.pos();
+        let pp = self.pos_next();
+        let s = self.radius * 4. + self.velocity.length() * 4. + (pp - p).length();
+        quad_tree::Rect::new(p.x, p.y, s, s)
     }
 
     fn draw(&self) {
@@ -260,8 +269,7 @@ async fn main() {
     let mut paused = true;
     let mut drawing_enabled = true;
 
-    const n_balls: usize = 100;
-    let mut balls = Vec::with_capacity(n_balls);
+    let mut balls = Vec::with_capacity(NB_BALLS);
 
     const FPS_FRAMES: usize = 100;
     let mut fps: [f32; FPS_FRAMES] = [0.; FPS_FRAMES];
@@ -275,7 +283,7 @@ async fn main() {
     );
     let mut test_quad_tree = QuadTree::new(tree_area);
 
-    for i in 0..n_balls {
+    for i in 0..NB_BALLS {
         let r = 2.;
         let ball = Ball::new(
             Vec2::from((
@@ -398,6 +406,7 @@ async fn main() {
         if drawing_enabled {
             for ball in &balls {
                 ball.draw();
+                ball.get_collision_area().debug_draw(1., ball.color);
             }
 
             // test_quad_tree.debug_draw();

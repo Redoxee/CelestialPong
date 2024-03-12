@@ -158,6 +158,12 @@ impl QuadTree {
         }
     }
 
+    pub fn get_items(&self, request_area: Rect) {
+        if !self.area.overlap(&request_area) {
+
+        }
+    }
+
     pub fn debug_draw(&self) {
         let color = color::RED;
 
