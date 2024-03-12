@@ -1,5 +1,5 @@
 use macroquad::{
-    color::{self, colors},
+    color::{self},
     prelude::*,
 };
 
@@ -75,10 +75,7 @@ pub struct QuadTree {
     entries: [QuadTreeEntry; QUADTREE_SIZE],
     number_of_entries: usize,
     area: Rect,
-    north_east: Option<Box<QuadTree>>,
-    north_west: Option<Box<QuadTree>>,
-    south_east: Option<Box<QuadTree>>,
-    south_west: Option<Box<QuadTree>>,
+    sub_trees: Option<Box<[QuadTree; 4]>>,
 }
 
 impl QuadTree {
@@ -87,10 +84,7 @@ impl QuadTree {
             area,
             entries: [QuadTreeEntry::new(Vec2::ZERO, 0); QUADTREE_SIZE],
             number_of_entries: 0,
-            north_east: Option::None,
-            north_west: Option::None,
-            south_east: Option::None,
-            south_west: Option::None,
+            sub_trees: Option::None,
         };
     }
 
@@ -108,59 +102,42 @@ impl QuadTree {
                 self.entries[self.number_of_entries] = entry;
                 self.number_of_entries = self.number_of_entries + 1;
                 if self.is_full() {
-                    self.north_east = Some(Box::new(QuadTree::new(Rect::new(
-                        self.area.x - self.area.half_width / 2.,
-                        self.area.y - self.area.half_height / 2.,
-                        self.area.half_width,
-                        self.area.half_height,
-                    ))));
-                    self.north_west = Some(Box::new(QuadTree::new(Rect::new(
-                        self.area.x + self.area.half_width / 2.,
-                        self.area.y - self.area.half_height / 2.,
-                        self.area.half_width,
-                        self.area.half_height,
-                    ))));
-                    self.south_east = Some(Box::new(QuadTree::new(Rect::new(
-                        self.area.x - self.area.half_width / 2.,
-                        self.area.y + self.area.half_height / 2.,
-                        self.area.half_width,
-                        self.area.half_height,
-                    ))));
-                    self.south_west = Some(Box::new(QuadTree::new(Rect::new(
-                        self.area.x + self.area.half_width / 2.,
-                        self.area.y + self.area.half_height / 2.,
-                        self.area.half_width,
-                        self.area.half_height,
-                    ))));
+                    self.sub_trees = Some(Box::new([
+                        QuadTree::new(Rect::new(
+                            self.area.x - self.area.half_width / 2.,
+                            self.area.y - self.area.half_height / 2.,
+                            self.area.half_width,
+                            self.area.half_height,
+                        )),
+                        QuadTree::new(Rect::new(
+                            self.area.x + self.area.half_width / 2.,
+                            self.area.y - self.area.half_height / 2.,
+                            self.area.half_width,
+                            self.area.half_height,
+                        )),
+                        QuadTree::new(Rect::new(
+                            self.area.x - self.area.half_width / 2.,
+                            self.area.y + self.area.half_height / 2.,
+                            self.area.half_width,
+                            self.area.half_height,
+                        )),
+                        QuadTree::new(Rect::new(
+                            self.area.x + self.area.half_width / 2.,
+                            self.area.y + self.area.half_height / 2.,
+                            self.area.half_width,
+                            self.area.half_height,
+                        )),
+                    ]));
                 }
             }
-            true => {
-                match self.north_east {
-                    Some(ref mut qt) => qt.add(entry),
-                    None => panic!("missing subnode!"),
+            true => match self.sub_trees {
+                Some(ref mut sub_nodes) => {
+                    for node in sub_nodes.iter_mut() {
+                        node.add(entry);
+                    }
                 }
-
-                match self.north_west {
-                    Some(ref mut qt) => qt.add(entry),
-                    None => panic!("missing subnode!"),
-                }
-
-                match self.south_east {
-                    Some(ref mut qt) => qt.add(entry),
-                    None => panic!("missing subnode!"),
-                }
-
-                match self.south_west {
-                    Some(ref mut qt) => qt.add(entry),
-                    None => panic!("missing subnode!"),
-                }
-            }
-        }
-    }
-
-    pub fn get_items(&self, request_area: Rect) {
-        if !self.area.overlap(&request_area) {
-
+                None => panic!("missing subnodes!"),
+            },
         }
     }
 
@@ -169,24 +146,13 @@ impl QuadTree {
 
         self.area.debug_draw(2., color);
 
-        match &self.north_east {
-            Some(qt) => qt.debug_draw(),
-            _ => {}
-        }
-
-        match &self.north_west {
-            Some(qt) => qt.debug_draw(),
-            _ => {}
-        }
-
-        match &self.south_east {
-            Some(qt) => qt.debug_draw(),
-            _ => {}
-        }
-
-        match &self.south_west {
-            Some(qt) => qt.debug_draw(),
-            _ => {}
+        match &self.sub_trees {
+            Some(sub_nodes) => {
+                for node in sub_nodes.iter() {
+                    node.debug_draw();
+                }
+            }
+            None => {}
         }
     }
 }

@@ -284,7 +284,7 @@ async fn main() {
     let mut test_quad_tree = QuadTree::new(tree_area);
 
     for i in 0..NB_BALLS {
-        let r = 2.;
+        let r = 10.;
         let ball = Ball::new(
             Vec2::from((
                 rng.gen::<f32>() * WINDOW_SIZE.x,
