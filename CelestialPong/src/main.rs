@@ -140,7 +140,7 @@ impl Capsule {
 static mut BALL_POS_CURRENT: usize = 0;
 static mut BALL_POS_NEXT: usize = 1;
 
-const NB_BALLS: usize = 4;
+const NB_BALLS: usize = 50;
 
 #[derive(Clone, Copy, Debug)]
 struct Ball {
@@ -403,12 +403,17 @@ async fn main() {
             }
         }
 
+        let (mpos_x, mpos_y) = mouse_position();
+        let debug_rect = quad_tree::Rect::new(mpos_x, mpos_y, 50., 50.);
+        let mut debug_contained = Vec::new();
+        test_quad_tree.query_entries(&debug_rect, &mut debug_contained);
+        println!("{}", debug_contained.len());
         if drawing_enabled {
             for ball in &balls {
                 ball.draw();
-                ball.get_collision_area().debug_draw(1., ball.color);
             }
 
+            debug_rect.debug_draw(2., colors::GOLD);
             // test_quad_tree.debug_draw();
         }
 

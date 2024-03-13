@@ -58,8 +58,8 @@ impl Rect {
 
 #[derive(Clone, Copy, Debug)]
 pub struct QuadTreeEntry {
-    position: Vec2,
-    payload: usize,
+    pub position: Vec2,
+    pub payload: usize,
 }
 
 impl QuadTreeEntry {
@@ -138,6 +138,27 @@ impl QuadTree {
                 }
                 None => panic!("missing subnodes!"),
             },
+        }
+    }
+
+    pub fn query_entries(&self, query: &Rect, result: &mut Vec<QuadTreeEntry>) {
+        if !self.area.overlap(query) {
+            return;
+        }
+
+        for entry in self.entries {
+            if query.contains(entry.position) {
+                result.push(entry);
+            }
+        }
+
+        match self.sub_trees {
+            Some(ref sub_nodes) => {
+                for node in sub_nodes.iter() {
+                    node.query_entries(query, result);
+                }
+            }
+            None => {}
         }
     }
 
