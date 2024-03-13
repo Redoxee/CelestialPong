@@ -140,7 +140,8 @@ impl Capsule {
 static mut BALL_POS_CURRENT: usize = 0;
 static mut BALL_POS_NEXT: usize = 1;
 
-const NB_BALLS: usize = 50;
+const NB_BALLS: usize = 100;
+const RADII: f32 = 15.;
 
 #[derive(Clone, Copy, Debug)]
 struct Ball {
@@ -185,8 +186,7 @@ impl Ball {
 
     fn get_collision_area(&self) -> quad_tree::Rect {
         let p = self.pos();
-        let pp = self.pos_next();
-        let s = self.radius * 4. + self.velocity.length() * 4. + (pp - p).length();
+        let s = self.radius * 3. + self.velocity.length() * 4.;
         quad_tree::Rect::new(p.x, p.y, s, s)
     }
 
@@ -274,25 +274,25 @@ async fn main() {
     const FPS_FRAMES: usize = 100;
     let mut fps: [f32; FPS_FRAMES] = [0.; FPS_FRAMES];
     let mut fps_index: usize = 0;
-
+    
     let tree_area = quad_tree::Rect::new(
         WINDOW_SIZE.x / 2.,
         WINDOW_SIZE.y / 2.,
         WINDOW_SIZE.x,
         WINDOW_SIZE.y,
     );
-    let mut test_quad_tree = QuadTree::new(tree_area);
 
+    let mut quad_tree = QuadTree::new(tree_area);
+    
     for i in 0..NB_BALLS {
-        let r = 10.;
         let ball = Ball::new(
             Vec2::from((
                 rng.gen::<f32>() * WINDOW_SIZE.x,
                 rng.gen::<f32>() * WINDOW_SIZE.y,
             )),
             Vec2::from((rng.gen::<f32>() * 4. - 2., rng.gen::<f32>() * 4. - 2.)),
-            r,
-            PI * r.powf(2.),
+            RADII,
+            PI * RADII.powf(2.),
             Color {
                 r: rng.gen::<f32>() + 0.25,
                 g: rng.gen::<f32>() + 0.25,
@@ -302,7 +302,7 @@ async fn main() {
         );
 
         balls.push(ball);
-        test_quad_tree.add(QuadTreeEntry::new(ball.pos(), i));
+        quad_tree.add(QuadTreeEntry::new(ball.pos(), i));
     }
 
     // test variables
@@ -362,10 +362,15 @@ async fn main() {
                 ..Default::default()
             },
         );
+        
+        quad_tree = QuadTree::new(tree_area);
 
         if !paused {
-            for ball in balls.iter_mut() {
-                ball.update(dt, a);
+            for index in 0..balls.len() {
+                balls[index].update(dt, a);
+
+                let ball_pos = balls[index].pos();
+                quad_tree.add(QuadTreeEntry::new(ball_pos, index));
             }
 
             unsafe {
@@ -374,46 +379,40 @@ async fn main() {
                 BALL_POS_NEXT = temp;
             }
 
-            balls.sort_by(|a, b| a.pos().x.partial_cmp(&b.pos().x).unwrap());
+            //balls.sort_by(|a, b| a.pos().x.partial_cmp(&b.pos().x).unwrap());
             let mut left_ball = 0;
             let mut right_bound = balls[left_ball].pos().x + balls[left_ball].radius;
 
-            test_quad_tree = QuadTree::new(tree_area);
 
-            for i in 1..balls.len() {
-                if balls[i].pos().x - balls[i].radius <= right_bound {
-                    if balls[i].pos().x + balls[i].radius > right_bound {
-                        right_bound = balls[i].pos().x + balls[i].radius;
+            for i in 0..balls.len() {
+                let zone_check = balls[i].get_collision_area();
+                let mut near_balls = Vec::new();
+                quad_tree.query_entries(&zone_check, &mut near_balls);
+                for entry in near_balls {
+                    if entry.payload == i {
+                        continue;
                     }
 
-                    let (left, right) = balls.split_at_mut(i);
-
-                    for other_ball in &mut left[left_ball..i] {
-                        if right[0].check_collision(other_ball) {
-                            right[0].collide(other_ball);
+                    let other_ball_index = entry.payload;
+                    
+                    if balls[i].check_collision(&balls[other_ball_index]) {
+                        if i > other_ball_index {
+                            let (left, right) = balls.split_at_mut(i);
+                            right[0].collide(&mut left[other_ball_index]);
+                        }
+                        else {
+                            let (left, right) = balls.split_at_mut(other_ball_index);
+                            right[0].collide(&mut left[i]);
                         }
                     }
-                } else {
-                    left_ball = i;
-                    right_bound = balls[i].pos().x + balls[i].radius;
                 }
-
-                let ball_pos = balls[i].pos();
-                test_quad_tree.add(QuadTreeEntry::new(ball_pos, i));
             }
         }
 
-        let (mpos_x, mpos_y) = mouse_position();
-        let debug_rect = quad_tree::Rect::new(mpos_x, mpos_y, 50., 50.);
-        let mut debug_contained = Vec::new();
-        test_quad_tree.query_entries(&debug_rect, &mut debug_contained);
-        println!("{}", debug_contained.len());
         if drawing_enabled {
             for ball in &balls {
                 ball.draw();
             }
-
-            debug_rect.debug_draw(2., colors::GOLD);
             // test_quad_tree.debug_draw();
         }
 
