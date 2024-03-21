@@ -1,18 +1,25 @@
 // based on https://github.com/Markek1/Collision-Simulator
 // other usefull link https://arrowinmyknee.com/2021/03/15/some-math-about-capsule-collision/
 
+mod ball;
+mod capsule;
+mod quad_tree;
+
 use std::{f32::consts::PI, sync::PoisonError};
 
 use macroquad::{
     color::{self, colors},
     prelude::*,
+    rand::ChooseRandom,
 };
+
 use rand::Rng;
 extern crate rand;
 
-mod quad_tree;
+use crate::ball::*;
 use crate::quad_tree::*;
-const WINDOW_SIZE: Vec2 = Vec2::from_array([800., 800.]);
+
+const WINDOW_SIZE: Vec2 = Vec2::from_array([1024., 1024.]);
 
 fn window_config() -> Conf {
     Conf {
@@ -24,239 +31,11 @@ fn window_config() -> Conf {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct Capsule {
-    p1: Vec2,
-    p2: Vec2,
-    radius: f32,
-    color: Color,
-}
-
-// From : https://arrowinmyknee.com/2021/03/15/some-math-about-capsule-collision/
-// Computes closest points C1 and C2 of S1(s)=P1+s*(Q1-P1) and
-// S2(t)=P2+t*(Q2-P2), returning s and t. Function result is squared
-// distance between between S1(s) and S2(t)
-fn distance_point_segment_squared(p1: Vec2, q1: Vec2, p2: Vec2, q2: Vec2) -> f32 {
-    let d1 = q1 - p1; // Direction vector of segment S1
-    let d2 = q2 - p2; // Direction vector of segment S2
-    let r = p1 - p2;
-    let a = Vec2::dot(d1, d1); // Squared length of segment S1, always nonnegative
-    let e = Vec2::dot(d2, d2); // Squared length of segment S2, always nonnegative
-    let f = Vec2::dot(d2, r);
-    let mut s;
-    let mut t;
-
-    // Check if either or both segments degenerate into points
-    if a <= f32::EPSILON && e <= f32::EPSILON {
-        // Both segments degenerate into points
-        return Vec2::dot(p1 - p2, p1 - p2);
-    }
-
-    if a <= f32::EPSILON {
-        // First segment degenerates into a point
-        s = 0.0;
-        t = f / e; // s = 0 => t = (b*s + f) / e = f / e
-        t = f32::clamp(t, 0., 1.);
-    } else {
-        let c = Vec2::dot(d1, r);
-        if e <= f32::EPSILON {
-            // Second segment degenerates into a point
-            t = 0.;
-            s = f32::clamp(-c / a, 0., 1.); // t = 0 => s = (b*t - c) / a = -c / a
-        } else {
-            // The general nondegenerate case starts here
-            let b = Vec2::dot(d1, d2);
-            let denom = a * e - b * b; // Always nonnegative
-
-            // If segments not parallel, compute closest point on L1 to L2 and
-            // clamp to segment S1. Else pick arbitrary s (here 0)
-            if denom != 0. {
-                s = f32::clamp((b * f - c * e) / denom, 0., 1.);
-            } else {
-                s = 0.;
-            }
-
-            // Compute point on L2 closest to S1(s) using
-            // t = Dot((P1 + D1*s) - P2,D2) / Dot(D2,D2) = (b*s + f) / e
-            t = (b * s + f) / e;
-            // If t in [0,1] done. Else clamp t, recompute s for the new value
-            // of t using s = Dot((P2 + D2*t) - P1,D1) / Dot(D1,D1)= (t*b - c) / a
-            // and clamp s to [0, 1]
-            if t < 0. {
-                t = 0.;
-                s = f32::clamp(-c / a, 0., 1.);
-            } else if t > 1. {
-                t = 1.;
-                s = f32::clamp((b - c) / a, 0., 1.);
-            }
-        }
-    }
-
-    let c1 = p1 + d1 * s;
-    let c2 = p2 + d2 * t;
-    return Vec2::dot(c1 - c2, c1 - c2);
-}
-
-impl Capsule {
-    fn new(p1: Vec2, p2: Vec2, r: f32, color: Color) -> Capsule {
-        return Capsule {
-            p1: p1,
-            p2: p2,
-            radius: r,
-            color: color,
-        };
-    }
-
-    fn draw(&self) {
-        draw_circle_lines(self.p1.x, self.p1.y, self.radius, 2., self.color);
-        draw_circle_lines(self.p2.x, self.p2.y, self.radius, 2., self.color);
-        let dir = (self.p2 - self.p1).normalize();
-        let cr = vec2(dir.y, -dir.x) * self.radius;
-        draw_line(
-            self.p1.x + cr.x,
-            self.p1.y + cr.y,
-            self.p2.x + cr.x,
-            self.p2.y + cr.y,
-            2.,
-            self.color,
-        );
-        draw_line(
-            self.p1.x - cr.x,
-            self.p1.y - cr.y,
-            self.p2.x - cr.x,
-            self.p2.y - cr.y,
-            2.,
-            self.color,
-        );
-    }
-
-    fn overlap(caps1: Capsule, caps2: Capsule) -> bool {
-        let dist = distance_point_segment_squared(caps1.p1, caps1.p2, caps2.p1, caps2.p2);
-        let r = caps1.radius + caps2.radius;
-        return dist <= (r * r);
-    }
-}
-
 static mut BALL_POS_CURRENT: usize = 0;
 static mut BALL_POS_NEXT: usize = 1;
 
-const NB_BALLS: usize = 100;
-const RADII: f32 = 15.;
-
-#[derive(Clone, Copy, Debug)]
-struct Ball {
-    positions: [Vec2; 2],
-    velocity: Vec2,
-    radius: f32,
-    mass: f32,
-    color: Color,
-}
-
-impl Ball {
-    fn new(position: Vec2, velocity: Vec2, radius: f32, mass: f32, color: Color) -> Ball {
-        let mut positions: [Vec2; 2] = Default::default();
-
-        unsafe {
-            positions[BALL_POS_CURRENT] = position;
-            positions[BALL_POS_NEXT] = position;
-        }
-
-        Ball {
-            positions,
-            velocity,
-            radius,
-            mass,
-            color,
-        }
-    }
-
-    fn pos(&self) -> Vec2 {
-        unsafe { self.positions[BALL_POS_CURRENT] }
-    }
-
-    fn pos_next(&self) -> Vec2 {
-        unsafe { self.positions[BALL_POS_NEXT] }
-    }
-
-    fn set_pos(&mut self, new_pos: Vec2) {
-        unsafe {
-            self.positions[BALL_POS_NEXT] = new_pos;
-        }
-    }
-
-    fn get_collision_area(&self) -> quad_tree::Rect {
-        let p = self.pos();
-        let s = self.radius * 3. + self.velocity.length() * 4.;
-        quad_tree::Rect::new(p.x, p.y, s, s)
-    }
-
-    fn draw(&self) {
-        let pos = self.pos();
-        draw_circle(pos.x, pos.y, self.radius, self.color);
-    }
-
-    fn update(&mut self, dt: f32, acc: Vec2) {
-        self.velocity += acc * dt;
-        let mut pos = self.pos();
-
-        if pos.x < self.radius && self.velocity.x < 0.
-            || WINDOW_SIZE.x - pos.x < self.radius && self.velocity.x > 0.
-        {
-            self.velocity.x *= -1.;
-        }
-
-        if pos.y < self.radius && self.velocity.y < 0.
-            || WINDOW_SIZE.y - pos.y < self.radius && self.velocity.y > 0.
-        {
-            self.velocity.y *= -1.;
-        }
-
-        self.set_pos(pos + self.velocity);
-    }
-
-    fn check_collision(&self, other: &Ball) -> bool {
-        other.pos().distance(self.pos()) <= other.radius + self.radius
-    }
-
-    // Does collision effect for both self and the other object
-    // Based on https://www.vobarian.com/collisions/2dcollisions2.pdf
-    // The individual steps from the document are commented
-    fn collide(&mut self, other: &mut Ball) {
-        let pos_diff = self.pos() - other.pos();
-
-        // 1
-        let unit_normal = pos_diff.normalize();
-        let unit_tangent = Vec2::from((-unit_normal.y, unit_normal.x));
-
-        // 3
-        let v1n = self.velocity.dot(unit_normal);
-        let v1t = self.velocity.dot(unit_tangent);
-        let v2n = other.velocity.dot(unit_normal);
-        let v2t = other.velocity.dot(unit_tangent);
-
-        // 5
-        let new_v1n =
-            (v1n * (self.mass - other.mass) + 2. * other.mass * v2n) / (self.mass + other.mass);
-        let new_v2n =
-            (v2n * (other.mass - self.mass) + 2. * self.mass * v1n) / (self.mass + other.mass);
-
-        // 6
-        let final_v1n = new_v1n * unit_normal;
-        let final_v1t = v1t * unit_tangent;
-        let final_v2n = new_v2n * unit_normal;
-        let final_v2t = v2t * unit_tangent;
-
-        // 7
-        let final_v1 = final_v1n + final_v1t;
-        let final_v2 = final_v2n + final_v2t;
-
-        // The if statement makes them not get stuck in each other
-        if (self.velocity - other.velocity).dot(self.pos() - other.pos()) < 0. {
-            self.velocity = final_v1;
-            other.velocity = final_v2;
-        }
-    }
-}
+const NB_BALLS: usize = 10;
+const RADII: f32 = 40.;
 
 fn draw_cross(p: Vec2, color: Color) {
     draw_line(p.x - 5., p.y - 5., p.x + 5., p.y + 5., 1., color);
@@ -274,7 +53,7 @@ async fn main() {
     const FPS_FRAMES: usize = 100;
     let mut fps: [f32; FPS_FRAMES] = [0.; FPS_FRAMES];
     let mut fps_index: usize = 0;
-    
+
     let tree_area = quad_tree::Rect::new(
         WINDOW_SIZE.x / 2.,
         WINDOW_SIZE.y / 2.,
@@ -283,7 +62,7 @@ async fn main() {
     );
 
     let mut quad_tree = QuadTree::new(tree_area);
-    
+
     for i in 0..NB_BALLS {
         let ball = Ball::new(
             Vec2::from((
@@ -299,21 +78,15 @@ async fn main() {
                 b: rng.gen::<f32>() + 0.25,
                 a: 1.,
             },
+            tree_area,
         );
 
         balls.push(ball);
-        quad_tree.add(QuadTreeEntry::new(ball.pos(), i));
+        quad_tree.add(QuadTreeEntry::new(ball.position, i));
     }
-
-    // test variables
-    let mut spx = 300.;
-    let mut spy = 180.;
 
     // acceleration
     let mut a;
-    let strength = 5.;
-
-    println!("{}", std::mem::size_of::<Ball>());
 
     loop {
         if is_key_pressed(KeyCode::Escape) {
@@ -328,18 +101,6 @@ async fn main() {
         }
 
         a = Vec2::ZERO;
-        if is_key_down(KeyCode::Left) {
-            a.x = -strength;
-        }
-        if is_key_down(KeyCode::Up) {
-            a.y = -strength;
-        }
-        if is_key_down(KeyCode::Right) {
-            a.x = strength;
-        }
-        if is_key_down(KeyCode::Down) {
-            a.y = strength;
-        }
 
         if is_key_down(KeyCode::S) {
             for ball in &mut balls {
@@ -353,8 +114,9 @@ async fn main() {
 
         clear_background(BLACK);
         let mean_fps = Iterator::sum::<f32>(fps.iter()) / FPS_FRAMES as f32;
+        // println!("fps : {}", 1. / mean_fps);
         draw_text_ex(
-            &format!("fps : {}", mean_fps),
+            &format!("fps : {}", 1. / mean_fps),
             32.,
             32.,
             TextParams {
@@ -362,14 +124,14 @@ async fn main() {
                 ..Default::default()
             },
         );
-        
+
         quad_tree = QuadTree::new(tree_area);
 
         if !paused {
             for index in 0..balls.len() {
                 balls[index].update(dt, a);
 
-                let ball_pos = balls[index].pos();
+                let ball_pos = balls[index].position;
                 quad_tree.add(QuadTreeEntry::new(ball_pos, index));
             }
 
@@ -378,11 +140,6 @@ async fn main() {
                 BALL_POS_CURRENT = BALL_POS_NEXT;
                 BALL_POS_NEXT = temp;
             }
-
-            //balls.sort_by(|a, b| a.pos().x.partial_cmp(&b.pos().x).unwrap());
-            let mut left_ball = 0;
-            let mut right_bound = balls[left_ball].pos().x + balls[left_ball].radius;
-
 
             for i in 0..balls.len() {
                 let zone_check = balls[i].get_collision_area();
@@ -394,13 +151,12 @@ async fn main() {
                     }
 
                     let other_ball_index = entry.payload;
-                    
+
                     if balls[i].check_collision(&balls[other_ball_index]) {
                         if i > other_ball_index {
                             let (left, right) = balls.split_at_mut(i);
                             right[0].collide(&mut left[other_ball_index]);
-                        }
-                        else {
+                        } else {
                             let (left, right) = balls.split_at_mut(other_ball_index);
                             right[0].collide(&mut left[i]);
                         }
@@ -409,11 +165,42 @@ async fn main() {
             }
         }
 
+        let (spx, spy) = mouse_position();
+        let mouse_pos = Vec2::new(spx, spy);
+        let mut near_balls = Vec::new();
+        quad_tree.query_entries(
+            &quad_tree::Rect::new(spx, spy, RADII * 2., RADII * 2.),
+            &mut near_balls,
+        );
+
+        let dist_check = RADII * RADII;
+        let under = near_balls
+            .into_iter()
+            .find(|b| (balls[b.payload].position - mouse_pos).length_squared() < dist_check);
+        match under {
+            Some(entry) => {
+                let b = balls[entry.payload];
+                draw_circle_lines(b.position.x, b.position.y, b.radius, 2., colors::GOLD);
+            }
+            _ => {}
+        }
+        if is_mouse_button_down(MouseButton::Left) {
+            match under {
+                Some(entry) => {
+                    let b = balls.get_mut(entry.payload).unwrap();
+                    b.velocity = Vec2::ZERO;
+                }
+                _ => {}
+            }
+        }
+
         if drawing_enabled {
             for ball in &balls {
                 ball.draw();
+                // ball.get_collision_area().debug_draw(1., ball.color);
             }
-            // test_quad_tree.debug_draw();
+
+            // quad_tree.debug_draw();
         }
 
         /*
