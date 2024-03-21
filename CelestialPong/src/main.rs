@@ -10,7 +10,8 @@ use std::{borrow::Borrow, f32::consts::PI, sync::PoisonError};
 use macroquad::{
     color::{self, colors},
     prelude::*,
-    rand::ChooseRandom, window,
+    rand::ChooseRandom,
+    window,
 };
 
 use rand::Rng;
@@ -18,8 +19,6 @@ extern crate rand;
 
 use crate::ball::*;
 use crate::quad_tree::*;
-
-static mut WINDOW_SIZE: Vec2 = Vec2::from_array([1024., 1024.]);
 
 fn window_config() -> Conf {
     Conf {
@@ -29,8 +28,11 @@ fn window_config() -> Conf {
     }
 }
 
-const NB_BALLS: usize = 1;
-const RADII: f32 = 30.;
+const NB_BALLS: usize = 100;
+const RADII: f32 = 10.;
+
+const GRAVITY: f32 = 4.;
+const BODY_BOUNCYNESS: f32 = 0.9;
 
 fn draw_cross(p: Vec2, color: Color) {
     draw_line(p.x - 5., p.y - 5., p.x + 5., p.y + 5., 1., color);
@@ -43,7 +45,7 @@ fn damping(pos: Vec2, target: Vec2, dt: f32, elasticity: f32) -> Vec2 {
 
 #[macroquad::main(window_config)]
 async fn main() {
-    let play_area_size = Vec2::new(window::screen_width(),window::screen_height());
+    let play_area_size = Vec2::new(window::screen_width(), window::screen_height());
 
     let mut rng = rand::thread_rng();
     let mut paused = true;
@@ -59,8 +61,8 @@ async fn main() {
     let tree_area = quad_tree::Rect::new(
         play_area_size.x / 2.,
         play_area_size.y / 2.,
-        play_area_size.x,
-        play_area_size.y,
+        play_area_size.x * 4.,
+        play_area_size.x * 4.,
     );
 
     let mut quad_tree = QuadTree::new(tree_area);
@@ -90,12 +92,13 @@ async fn main() {
     }
 
     static_bodies.push(Ball::new(
-        Vec2::new(play_area_size.x/2., play_area_size.y/2.),
+        Vec2::new(play_area_size.x / 2., play_area_size.y / 2.),
         Vec2::ZERO,
-        100.,
+        60.,
         1000.,
         color::WHITE,
-        tree_area));
+        tree_area,
+    ));
 
     loop {
         if is_key_pressed(KeyCode::Escape) {
@@ -121,7 +124,6 @@ async fn main() {
 
         clear_background(BLACK);
         let mean_fps = Iterator::sum::<f32>(fps.iter()) / FPS_FRAMES as f32;
-        // println!("fps : {}", 1. / mean_fps);
         draw_text_ex(
             &format!("fps : {}", 1. / mean_fps),
             32.,
@@ -132,6 +134,8 @@ async fn main() {
             },
         );
 
+        let dt = 1. / 60.;
+
         quad_tree = QuadTree::new(tree_area);
 
         if !paused {
@@ -141,7 +145,9 @@ async fn main() {
                 if selected_ball == None || selected_ball.unwrap() != index {
                     for body in &static_bodies {
                         let delta = body.position - ball.position;
-                      //  local_force = local_force + delta.normalize() * body.mass * ball.mass / delta.length().powf(2.);
+                        local_force = local_force
+                            + delta.normalize() * body.mass * ball.mass / delta.length().powf(2.)
+                                * GRAVITY;
                     }
                 }
 
@@ -181,8 +187,13 @@ async fn main() {
                 for near in near_objects {
                     let ball = balls.get_mut(near.payload).unwrap();
                     if body.check_collision(&ball) {
-                        ball.collide(body);
-                        body.velocity = Vec2::ZERO;
+                        let delta = ball.position - body.position;
+                        if delta.dot(ball.velocity) < 0. && ball.velocity.length_squared() > 0.001 {
+                            let delta = delta.normalize();
+                            ball.position = body.position + delta * (body.radius + ball.radius);
+                            ball.velocity = (ball.velocity - 2. * delta.dot(ball.velocity) * delta)
+                                * BODY_BOUNCYNESS;
+                        }
                     }
                 }
             }
