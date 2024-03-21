@@ -42,6 +42,10 @@ fn draw_cross(p: Vec2, color: Color) {
     draw_line(p.x - 5., p.y + 5., p.x + 5., p.y - 5., 1., color);
 }
 
+fn damping(pos: Vec2, target: Vec2, dt: f32, elasticity: f32) -> Vec2 {
+    return (target - pos) / elasticity * dt;
+}
+
 #[macroquad::main(window_config)]
 async fn main() {
     let mut rng = rand::thread_rng();
@@ -62,6 +66,8 @@ async fn main() {
     );
 
     let mut quad_tree = QuadTree::new(tree_area);
+
+    let mut selected_ball = None;
 
     for i in 0..NB_BALLS {
         let ball = Ball::new(
@@ -85,9 +91,6 @@ async fn main() {
         quad_tree.add(QuadTreeEntry::new(ball.position, i));
     }
 
-    // acceleration
-    let mut a;
-
     loop {
         if is_key_pressed(KeyCode::Escape) {
             return;
@@ -99,8 +102,6 @@ async fn main() {
         if is_key_pressed(KeyCode::V) {
             drawing_enabled = !drawing_enabled;
         }
-
-        a = Vec2::ZERO;
 
         if is_key_down(KeyCode::S) {
             for ball in &mut balls {
@@ -129,7 +130,7 @@ async fn main() {
 
         if !paused {
             for index in 0..balls.len() {
-                balls[index].update(dt, a);
+                balls[index].update(dt, Vec2::ZERO);
 
                 let ball_pos = balls[index].position;
                 quad_tree.add(QuadTreeEntry::new(ball_pos, index));
@@ -177,6 +178,7 @@ async fn main() {
         let under = near_balls
             .into_iter()
             .find(|b| (balls[b.payload].position - mouse_pos).length_squared() < dist_check);
+
         match under {
             Some(entry) => {
                 let b = balls[entry.payload];
@@ -184,14 +186,27 @@ async fn main() {
             }
             _ => {}
         }
-        if is_mouse_button_down(MouseButton::Left) {
+
+        if is_mouse_button_pressed(MouseButton::Left) {
             match under {
                 Some(entry) => {
-                    let b = balls.get_mut(entry.payload).unwrap();
-                    b.velocity = Vec2::ZERO;
+                    selected_ball = Some(entry.payload);
                 }
                 _ => {}
             }
+        }
+
+        if is_mouse_button_released(MouseButton::Left) {
+            selected_ball = None;
+        }
+
+        match selected_ball {
+            Some(ball_index) => {
+                let ball = balls.get_mut(ball_index).unwrap();
+                let force = damping(ball.position, mouse_pos, dt, 0.9);
+                ball.velocity = ball.velocity * 0.9 + force;
+            }
+            _ => {}
         }
 
         if drawing_enabled {
