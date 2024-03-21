@@ -7,7 +7,7 @@ pub struct Ball {
     pub position: Vec2,
     pub velocity: Vec2,
     pub radius: f32,
-    mass: f32,
+    pub mass: f32,
     pub color: Color,
     playing_field: Rect,
 }
@@ -44,7 +44,7 @@ impl Ball {
 
     pub fn update(&mut self, dt: f32, acc: Vec2) {
         self.velocity += acc * dt;
-        let mut pos = self.position;
+        let pos = self.position;
 
         if pos.x < self.playing_field.left && self.velocity.x < 0.
             || pos.x > self.playing_field.right && self.velocity.x > 0.

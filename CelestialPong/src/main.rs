@@ -5,12 +5,12 @@ mod ball;
 mod capsule;
 mod quad_tree;
 
-use std::{f32::consts::PI, sync::PoisonError};
+use std::{borrow::Borrow, f32::consts::PI, sync::PoisonError};
 
 use macroquad::{
     color::{self, colors},
     prelude::*,
-    rand::ChooseRandom,
+    rand::ChooseRandom, window,
 };
 
 use rand::Rng;
@@ -19,23 +19,18 @@ extern crate rand;
 use crate::ball::*;
 use crate::quad_tree::*;
 
-const WINDOW_SIZE: Vec2 = Vec2::from_array([1024., 1024.]);
+static mut WINDOW_SIZE: Vec2 = Vec2::from_array([1024., 1024.]);
 
 fn window_config() -> Conf {
     Conf {
-        window_title: "Collision Simulator".to_owned(),
-        window_width: WINDOW_SIZE.x.round() as i32,
-        window_height: WINDOW_SIZE.y.round() as i32,
-        window_resizable: false,
+        window_title: "Celestial pong".to_owned(),
+        fullscreen: true,
         ..Default::default()
     }
 }
 
-static mut BALL_POS_CURRENT: usize = 0;
-static mut BALL_POS_NEXT: usize = 1;
-
-const NB_BALLS: usize = 10;
-const RADII: f32 = 40.;
+const NB_BALLS: usize = 1;
+const RADII: f32 = 30.;
 
 fn draw_cross(p: Vec2, color: Color) {
     draw_line(p.x - 5., p.y - 5., p.x + 5., p.y + 5., 1., color);
@@ -48,21 +43,24 @@ fn damping(pos: Vec2, target: Vec2, dt: f32, elasticity: f32) -> Vec2 {
 
 #[macroquad::main(window_config)]
 async fn main() {
+    let play_area_size = Vec2::new(window::screen_width(),window::screen_height());
+
     let mut rng = rand::thread_rng();
     let mut paused = true;
     let mut drawing_enabled = true;
 
     let mut balls = Vec::with_capacity(NB_BALLS);
+    let mut static_bodies = Vec::new();
 
     const FPS_FRAMES: usize = 100;
     let mut fps: [f32; FPS_FRAMES] = [0.; FPS_FRAMES];
     let mut fps_index: usize = 0;
 
     let tree_area = quad_tree::Rect::new(
-        WINDOW_SIZE.x / 2.,
-        WINDOW_SIZE.y / 2.,
-        WINDOW_SIZE.x,
-        WINDOW_SIZE.y,
+        play_area_size.x / 2.,
+        play_area_size.y / 2.,
+        play_area_size.x,
+        play_area_size.y,
     );
 
     let mut quad_tree = QuadTree::new(tree_area);
@@ -72,8 +70,8 @@ async fn main() {
     for i in 0..NB_BALLS {
         let ball = Ball::new(
             Vec2::from((
-                rng.gen::<f32>() * WINDOW_SIZE.x,
-                rng.gen::<f32>() * WINDOW_SIZE.y,
+                rng.gen::<f32>() * play_area_size.x,
+                rng.gen::<f32>() * play_area_size.y,
             )),
             Vec2::from((rng.gen::<f32>() * 4. - 2., rng.gen::<f32>() * 4. - 2.)),
             RADII,
@@ -91,6 +89,14 @@ async fn main() {
         quad_tree.add(QuadTreeEntry::new(ball.position, i));
     }
 
+    static_bodies.push(Ball::new(
+        Vec2::new(play_area_size.x/2., play_area_size.y/2.),
+        Vec2::ZERO,
+        100.,
+        1000.,
+        color::WHITE,
+        tree_area));
+
     loop {
         if is_key_pressed(KeyCode::Escape) {
             return;
@@ -105,7 +111,7 @@ async fn main() {
 
         if is_key_down(KeyCode::S) {
             for ball in &mut balls {
-                ball.velocity *= 0.9;
+                ball.velocity *= 0.5;
             }
         }
 
@@ -130,16 +136,19 @@ async fn main() {
 
         if !paused {
             for index in 0..balls.len() {
-                balls[index].update(dt, Vec2::ZERO);
+                let ball = balls.get_mut(index).unwrap();
+                let mut local_force = Vec2::ZERO;
+                if selected_ball == None || selected_ball.unwrap() != index {
+                    for body in &static_bodies {
+                        let delta = body.position - ball.position;
+                      //  local_force = local_force + delta.normalize() * body.mass * ball.mass / delta.length().powf(2.);
+                    }
+                }
 
-                let ball_pos = balls[index].position;
+                ball.update(dt, local_force);
+
+                let ball_pos = ball.position;
                 quad_tree.add(QuadTreeEntry::new(ball_pos, index));
-            }
-
-            unsafe {
-                let temp = BALL_POS_CURRENT;
-                BALL_POS_CURRENT = BALL_POS_NEXT;
-                BALL_POS_NEXT = temp;
             }
 
             for i in 0..balls.len() {
@@ -161,6 +170,19 @@ async fn main() {
                             let (left, right) = balls.split_at_mut(other_ball_index);
                             right[0].collide(&mut left[i]);
                         }
+                    }
+                }
+            }
+
+            for body in static_bodies.iter_mut() {
+                let query = body.get_collision_area();
+                let mut near_objects = Vec::new();
+                quad_tree.query_entries(&query, &mut near_objects);
+                for near in near_objects {
+                    let ball = balls.get_mut(near.payload).unwrap();
+                    if body.check_collision(&ball) {
+                        ball.collide(body);
+                        body.velocity = Vec2::ZERO;
                     }
                 }
             }
@@ -203,7 +225,7 @@ async fn main() {
         match selected_ball {
             Some(ball_index) => {
                 let ball = balls.get_mut(ball_index).unwrap();
-                let force = damping(ball.position, mouse_pos, dt, 0.9);
+                let force = damping(ball.position, mouse_pos, dt, 0.8);
                 ball.velocity = ball.velocity * 0.9 + force;
             }
             _ => {}
@@ -215,6 +237,9 @@ async fn main() {
                 // ball.get_collision_area().debug_draw(1., ball.color);
             }
 
+            for body in &static_bodies {
+                body.draw();
+            }
             // quad_tree.debug_draw();
         }
 
