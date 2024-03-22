@@ -28,7 +28,7 @@ fn window_config() -> Conf {
     }
 }
 
-const NB_BALLS: usize = 100;
+const NB_BALLS: usize = 1;
 const RADII: f32 = 10.;
 
 const GRAVITY: f32 = 4.;
@@ -43,6 +43,18 @@ fn damping(pos: Vec2, target: Vec2, dt: f32, elasticity: f32) -> Vec2 {
     return (target - pos) / elasticity * dt;
 }
 
+fn get_gravity_force(ball :&Ball, body :&Ball) -> Vec2 {
+    let delta = body.position - ball.position;
+    return delta.normalize() * (body.mass * ball.mass) / delta.length().powf(2.) * GRAVITY;
+}
+
+fn get_orbital_velocity(b1 :&Ball, b2 :&Ball) -> Vec2 {
+    let delta = b2.position - b1.position;
+    let orbit_radius = delta.length();
+    let speed = (GRAVITY * (b1.mass + b2.mass) / orbit_radius).sqrt();
+    return Vec2::from((delta.y, -delta.x)).normalize() * speed;
+}
+
 #[macroquad::main(window_config)]
 async fn main() {
     let play_area_size = Vec2::new(window::screen_width(), window::screen_height());
@@ -50,13 +62,15 @@ async fn main() {
     let mut rng = rand::thread_rng();
     let mut paused = true;
     let mut drawing_enabled = true;
-
+    
     let mut balls = Vec::with_capacity(NB_BALLS);
     let mut static_bodies = Vec::new();
-
+    
     const FPS_FRAMES: usize = 100;
     let mut fps: [f32; FPS_FRAMES] = [0.; FPS_FRAMES];
     let mut fps_index: usize = 0;
+    
+    let mut selected_ball = None;
 
     let tree_area = quad_tree::Rect::new(
         play_area_size.x / 2.,
@@ -67,15 +81,26 @@ async fn main() {
 
     let mut quad_tree = QuadTree::new(tree_area);
 
-    let mut selected_ball = None;
+    static_bodies.push(Ball::new(
+        Vec2::new(play_area_size.x / 2., play_area_size.y / 2.),
+        Vec2::ZERO,
+        60.,
+        1000.,
+        color::WHITE,
+        tree_area,
+    ));
 
     for i in 0..NB_BALLS {
+        let position = Vec2::from((
+            rng.gen::<f32>() * play_area_size.x,
+            rng.gen::<f32>() * play_area_size.y,
+        ));
+        
+        let ball_speed = Vec2::from((rng.gen::<f32>() * 4. - 2., rng.gen::<f32>() * 4. - 2.));
+
         let ball = Ball::new(
-            Vec2::from((
-                rng.gen::<f32>() * play_area_size.x,
-                rng.gen::<f32>() * play_area_size.y,
-            )),
-            Vec2::from((rng.gen::<f32>() * 4. - 2., rng.gen::<f32>() * 4. - 2.)),
+            position,
+            ball_speed,
             RADII,
             PI * RADII.powf(2.),
             Color {
@@ -90,15 +115,6 @@ async fn main() {
         balls.push(ball);
         quad_tree.add(QuadTreeEntry::new(ball.position, i));
     }
-
-    static_bodies.push(Ball::new(
-        Vec2::new(play_area_size.x / 2., play_area_size.y / 2.),
-        Vec2::ZERO,
-        60.,
-        1000.,
-        color::WHITE,
-        tree_area,
-    ));
 
     loop {
         if is_key_pressed(KeyCode::Escape) {
@@ -115,6 +131,12 @@ async fn main() {
         if is_key_down(KeyCode::S) {
             for ball in &mut balls {
                 ball.velocity *= 0.5;
+            }
+        }
+
+        if is_key_down(KeyCode::O) {
+            for ball in &mut balls {
+                ball.velocity = get_orbital_velocity(ball, &static_bodies[0]);
             }
         }
 
@@ -141,20 +163,16 @@ async fn main() {
         if !paused {
             for index in 0..balls.len() {
                 let ball = balls.get_mut(index).unwrap();
+                quad_tree.add(QuadTreeEntry::new(ball.position, index));
+                
                 let mut local_force = Vec2::ZERO;
                 if selected_ball == None || selected_ball.unwrap() != index {
                     for body in &static_bodies {
-                        let delta = body.position - ball.position;
-                        local_force = local_force
-                            + delta.normalize() * body.mass * ball.mass / delta.length().powf(2.)
-                                * GRAVITY;
+                        local_force = local_force + get_gravity_force(ball, body)
                     }
                 }
-
+                
                 ball.update(dt, local_force);
-
-                let ball_pos = ball.position;
-                quad_tree.add(QuadTreeEntry::new(ball_pos, index));
             }
 
             for i in 0..balls.len() {
