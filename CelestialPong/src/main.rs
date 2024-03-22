@@ -28,10 +28,10 @@ fn window_config() -> Conf {
     }
 }
 
-const NB_BALLS: usize = 1;
-const RADII: f32 = 10.;
+const NB_BALLS: usize = 3000;
+const RADII: f32 = 5.;
 
-const GRAVITY: f32 = 4.;
+const GRAVITY: f32 = 15000.;
 const BODY_BOUNCYNESS: f32 = 0.9;
 
 fn draw_cross(p: Vec2, color: Color) {
@@ -51,7 +51,7 @@ fn get_gravity_force(ball :&Ball, body :&Ball) -> Vec2 {
 fn get_orbital_velocity(b1 :&Ball, b2 :&Ball) -> Vec2 {
     let delta = b2.position - b1.position;
     let orbit_radius = delta.length();
-    let speed = (GRAVITY * (b1.mass + b2.mass) / orbit_radius).sqrt();
+    let speed = (GRAVITY * (b2.mass) / orbit_radius).sqrt();
     return Vec2::from((delta.y, -delta.x)).normalize() * speed;
 }
 
@@ -84,7 +84,7 @@ async fn main() {
     static_bodies.push(Ball::new(
         Vec2::new(play_area_size.x / 2., play_area_size.y / 2.),
         Vec2::ZERO,
-        60.,
+        30.,
         1000.,
         color::WHITE,
         tree_area,
@@ -96,13 +96,11 @@ async fn main() {
             rng.gen::<f32>() * play_area_size.y,
         ));
         
-        let ball_speed = Vec2::from((rng.gen::<f32>() * 4. - 2., rng.gen::<f32>() * 4. - 2.));
-
-        let ball = Ball::new(
+        let mut ball = Ball::new(
             position,
-            ball_speed,
+            Vec2::ZERO,
             RADII,
-            PI * RADII.powf(2.),
+            1.,
             Color {
                 r: rng.gen::<f32>() + 0.25,
                 g: rng.gen::<f32>() + 0.25,
@@ -111,6 +109,11 @@ async fn main() {
             },
             tree_area,
         );
+        
+        // let ball_speed = Vec2::from((rng.gen::<f32>() * 20. - 10., rng.gen::<f32>() * 20. - 10.));
+        let ball_speed = get_orbital_velocity(&ball, &static_bodies[0]);
+
+        ball.velocity = ball_speed;
 
         balls.push(ball);
         quad_tree.add(QuadTreeEntry::new(ball.position, i));
@@ -254,8 +257,14 @@ async fn main() {
         match selected_ball {
             Some(ball_index) => {
                 let ball = balls.get_mut(ball_index).unwrap();
-                let force = damping(ball.position, mouse_pos, dt, 0.8);
-                ball.velocity = ball.velocity * 0.9 + force;
+                let force = damping(ball.position, mouse_pos, dt, 0.01);
+                let delta = (mouse_pos - ball.position);
+                let mut factor = 0.;
+                if delta != Vec2::ZERO {
+                    factor = delta.length() / 1000.;
+                }
+
+                ball.velocity = ball.velocity * factor + delta;
             }
             _ => {}
         }

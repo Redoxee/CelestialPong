@@ -33,7 +33,7 @@ impl Ball {
 
     pub fn get_collision_area(&self) -> quad_tree::Rect {
         let p = self.position;
-        let s = self.radius * 4. + self.velocity.length() * 4.;
+        let s = self.radius * 4.;
         quad_tree::Rect::new(p.x, p.y, s, s)
     }
 
@@ -58,7 +58,7 @@ impl Ball {
             self.velocity.y *= -1.;
         }
 
-        self.position = pos + self.velocity;
+        self.position = pos + self.velocity * dt;
     }
 
     pub fn check_collision(&self, other: &Ball) -> bool {
