@@ -5,97 +5,83 @@ mod ball;
 mod capsule;
 mod quad_tree;
 
-use std::{borrow::Borrow, f32::consts::PI, sync::PoisonError};
-
 use macroquad::{
     color::{self, colors},
     prelude::*,
-    rand::ChooseRandom,
     window,
 };
+use rand::SeedableRng;
 
 use rand::Rng;
+use rand_chacha::ChaCha20Rng;
 extern crate rand;
 
 use crate::ball::*;
 use crate::quad_tree::*;
 
-fn window_config() -> Conf {
-    Conf {
-        window_title: "Celestial pong".to_owned(),
-        fullscreen: true,
-        ..Default::default()
-    }
-}
-
-const NB_BALLS: usize = 3000;
-const RADII: f32 = 5.;
+const NB_BALLS: usize = 100;
+const RADII: f32 = 10.;
 
 const GRAVITY: f32 = 15000.;
 const BODY_BOUNCYNESS: f32 = 0.9;
 
-fn draw_cross(p: Vec2, color: Color) {
-    draw_line(p.x - 5., p.y - 5., p.x + 5., p.y + 5., 1., color);
-    draw_line(p.x - 5., p.y + 5., p.x + 5., p.y - 5., 1., color);
-}
+const MIN_START_ORBIT: f32 = 200.;
+const MAX_START_ORBIT: f32 = 300.;
 
 fn damping(pos: Vec2, target: Vec2, dt: f32, elasticity: f32) -> Vec2 {
     return (target - pos) / elasticity * dt;
 }
 
-fn get_gravity_force(ball :&Ball, body :&Ball) -> Vec2 {
+fn get_gravity_force(ball: &Ball, body: &Ball) -> Vec2 {
     let delta = body.position - ball.position;
     return delta.normalize() * (body.mass * ball.mass) / delta.length().powf(2.) * GRAVITY;
 }
 
-fn get_orbital_velocity(b1 :&Ball, b2 :&Ball) -> Vec2 {
+fn get_orbital_velocity(b1: &Ball, b2: &Ball) -> Vec2 {
     let delta = b2.position - b1.position;
     let orbit_radius = delta.length();
     let speed = (GRAVITY * (b2.mass) / orbit_radius).sqrt();
     return Vec2::from((delta.y, -delta.x)).normalize() * speed;
 }
 
-#[macroquad::main(window_config)]
-async fn main() {
-    let play_area_size = Vec2::new(window::screen_width(), window::screen_height());
+fn random_orbital_pos(
+    center: Vec2,
+    min_radius: f32,
+    max_radius: f32,
+    rng: &mut ChaCha20Rng,
+) -> Vec2 {
+    let angle = rng.gen::<f32>() * std::f32::consts::PI * 2.;
+    let result = Vec2::from((angle.cos(), angle.sin()));
+    let rad = rng.gen::<f32>() * (max_radius - min_radius) + min_radius;
+    let result = center + result * rad;
+    return result;
+}
 
-    let mut rng = rand::thread_rng();
-    let mut paused = true;
-    let mut drawing_enabled = true;
-    
-    let mut balls = Vec::with_capacity(NB_BALLS);
-    let mut static_bodies = Vec::new();
-    
-    const FPS_FRAMES: usize = 100;
-    let mut fps: [f32; FPS_FRAMES] = [0.; FPS_FRAMES];
-    let mut fps_index: usize = 0;
-    
-    let mut selected_ball = None;
+fn window_config() -> Conf {
+    Conf {
+        window_title: "Celestial pong".to_owned(),
+        window_width: 1200,
+        window_height: 1000,
+        ..Default::default()
+    }
+}
 
-    let tree_area = quad_tree::Rect::new(
-        play_area_size.x / 2.,
-        play_area_size.y / 2.,
-        play_area_size.x * 4.,
-        play_area_size.x * 4.,
-    );
-
-    let mut quad_tree = QuadTree::new(tree_area);
-
-    static_bodies.push(Ball::new(
-        Vec2::new(play_area_size.x / 2., play_area_size.y / 2.),
-        Vec2::ZERO,
-        30.,
-        1000.,
-        color::WHITE,
-        tree_area,
-    ));
+fn reset_balls(
+    balls: &mut Vec<Ball>,
+    tree_area: quad_tree::Rect,
+    static_bodies: &Vec<Ball>,
+    mut rng: &mut ChaCha20Rng,
+) {
+    balls.clear();
 
     for i in 0..NB_BALLS {
-        let position = Vec2::from((
-            rng.gen::<f32>() * play_area_size.x,
-            rng.gen::<f32>() * play_area_size.y,
-        ));
-        
+        let position = random_orbital_pos(
+            static_bodies[0].position,
+            MIN_START_ORBIT,
+            MAX_START_ORBIT,
+            &mut rng,
+        );
+
         let mut ball = Ball::new(
             position,
             Vec2::ZERO,
@@ -109,15 +95,52 @@ async fn main() {
             },
             tree_area,
         );
-        
+
         // let ball_speed = Vec2::from((rng.gen::<f32>() * 20. - 10., rng.gen::<f32>() * 20. - 10.));
         let ball_speed = get_orbital_velocity(&ball, &static_bodies[0]);
 
         ball.velocity = ball_speed;
 
         balls.push(ball);
-        quad_tree.add(QuadTreeEntry::new(ball.position, i));
     }
+}
+
+#[macroquad::main(window_config)]
+async fn main() {
+    let play_area_size = Vec2::new(window::screen_width(), window::screen_height());
+
+    let mut rng = rand_chacha::ChaChaRng::seed_from_u64(1);
+    let mut paused = true;
+    let mut drawing_enabled = true;
+
+    let mut balls = Vec::with_capacity(NB_BALLS);
+    let mut static_bodies = Vec::new();
+
+    const FPS_FRAMES: usize = 100;
+    let mut fps: [f32; FPS_FRAMES] = [0.; FPS_FRAMES];
+    let mut fps_index: usize = 0;
+
+    let mut selected_ball = None;
+
+    let tree_area = quad_tree::Rect::new(
+        play_area_size.x / 2.,
+        play_area_size.y / 2.,
+        play_area_size.x * 4.,
+        play_area_size.x * 4.,
+    );
+
+    let mut quad_tree;
+
+    static_bodies.push(Ball::new(
+        Vec2::new(play_area_size.x / 2., play_area_size.y / 2.),
+        Vec2::ZERO,
+        30.,
+        1000.,
+        color::WHITE,
+        tree_area,
+    ));
+
+    reset_balls(&mut balls, tree_area, &static_bodies, &mut rng);
 
     loop {
         if is_key_pressed(KeyCode::Escape) {
@@ -137,6 +160,13 @@ async fn main() {
             }
         }
 
+        if is_key_down(KeyCode::R) {
+            selected_ball = None;
+            paused = true;
+            rng = rand_chacha::ChaChaRng::seed_from_u64(1);
+            reset_balls(&mut balls, tree_area, &static_bodies, &mut rng);
+        }
+
         if is_key_down(KeyCode::O) {
             for ball in &mut balls {
                 ball.velocity = get_orbital_velocity(ball, &static_bodies[0]);
@@ -147,18 +177,6 @@ async fn main() {
         fps[fps_index] = dt;
         fps_index = (fps_index + 1) % FPS_FRAMES;
 
-        clear_background(BLACK);
-        let mean_fps = Iterator::sum::<f32>(fps.iter()) / FPS_FRAMES as f32;
-        draw_text_ex(
-            &format!("fps : {}", 1. / mean_fps),
-            32.,
-            32.,
-            TextParams {
-                font_size: 15,
-                ..Default::default()
-            },
-        );
-
         let dt = 1. / 60.;
 
         quad_tree = QuadTree::new(tree_area);
@@ -167,14 +185,14 @@ async fn main() {
             for index in 0..balls.len() {
                 let ball = balls.get_mut(index).unwrap();
                 quad_tree.add(QuadTreeEntry::new(ball.position, index));
-                
+
                 let mut local_force = Vec2::ZERO;
                 if selected_ball == None || selected_ball.unwrap() != index {
                     for body in &static_bodies {
                         local_force = local_force + get_gravity_force(ball, body)
                     }
                 }
-                
+
                 ball.update(dt, local_force);
             }
 
@@ -237,6 +255,17 @@ async fn main() {
             Some(entry) => {
                 let b = balls[entry.payload];
                 draw_circle_lines(b.position.x, b.position.y, b.radius, 2., colors::GOLD);
+
+                let dist = (b.position - static_bodies[0].position).length();
+                draw_text_ex(
+                    &format!("dist : {}", dist),
+                    32.,
+                    64.,
+                    TextParams {
+                        font_size: 15,
+                        ..Default::default()
+                    },
+                );
             }
             _ => {}
         }
@@ -268,6 +297,17 @@ async fn main() {
             }
             _ => {}
         }
+
+        let mean_fps = Iterator::sum::<f32>(fps.iter()) / FPS_FRAMES as f32;
+        draw_text_ex(
+            &format!("fps : {}", 1. / mean_fps),
+            32.,
+            32.,
+            TextParams {
+                font_size: 15,
+                ..Default::default()
+            },
+        );
 
         if drawing_enabled {
             for ball in &balls {
