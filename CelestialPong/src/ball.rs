@@ -5,6 +5,7 @@ use crate::quad_tree::{self, Rect};
 #[derive(Clone, Copy, Debug)]
 pub struct Ball {
     pub position: Vec2,
+    pub prev_position: Vec2,
     pub velocity: Vec2,
     pub radius: f32,
     pub mass: f32,
@@ -23,6 +24,7 @@ impl Ball {
     ) -> Ball {
         Ball {
             position,
+            prev_position: position,
             velocity,
             radius,
             mass,
@@ -58,6 +60,7 @@ impl Ball {
             self.velocity.y *= -1.;
         }
 
+        self.prev_position = self.position;
         self.position = pos + self.velocity * dt;
     }
 
