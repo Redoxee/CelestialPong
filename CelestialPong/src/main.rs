@@ -21,7 +21,7 @@ use crate::quad_tree::*;
 
 const NB_BALLS: usize = 1;
 const RADII: f32 = 10.;
-const BALL_MASS: f32 = 1.;
+const BALL_MASS: f32 = 20.;
 
 const GRAVITY: f32 = 15000.;
 const BODY_BOUNCYNESS: f32 = 0.9;
@@ -61,11 +61,13 @@ fn random_orbital_pos(
     return result;
 }
 
+const WINDOW_SIZE: [f32; 2] = [900., 900.];
+
 fn window_config() -> Conf {
     Conf {
         window_title: "Celestial pong".to_owned(),
-        window_width: 900,
-        window_height: 900,
+        window_width: WINDOW_SIZE[0] as i32,
+        window_height: WINDOW_SIZE[1] as i32,
         ..Default::default()
     }
 }
@@ -125,19 +127,14 @@ async fn main() {
 
     let mut selected_ball: Option<usize> = None;
 
-    let tree_area = quad_tree::Rect::new(
-        play_area_size.x / 2.,
-        play_area_size.y / 2.,
-        play_area_size.x * 4.,
-        play_area_size.x * 4.,
-    );
+    let tree_area = quad_tree::Rect::new(0., 0., play_area_size.x * 4., play_area_size.x * 4.);
 
     let mut quad_tree;
 
     let mut frame_per_frame: usize = 1;
 
     static_bodies.push(Ball::new(
-        Vec2::new(play_area_size.x / 2., play_area_size.y / 2.),
+        Vec2::new(0., 0.),
         Vec2::ZERO,
         30.,
         1000.,
@@ -309,28 +306,12 @@ async fn main() {
             _ => {}
         }
 
-        let mean_fps = Iterator::sum::<f32>(fps.iter()) / FPS_FRAMES as f32;
-        draw_text_ex(
-            &format!("fps : {}", 1. / mean_fps),
-            32.,
-            32.,
-            TextParams {
-                font_size: 15,
-                ..Default::default()
-            },
-        );
-
-        draw_text_ex(
-            &format!("Simulation speed : {}", frame_per_frame),
-            32.,
-            50.,
-            TextParams {
-                font_size: 15,
-                ..Default::default()
-            },
-        );
-
         if drawing_enabled {
+            set_camera(&Camera2D {
+                zoom: Vec2::from((2. / WINDOW_SIZE[0], 2. / WINDOW_SIZE[1])),
+                ..Default::default()
+            });
+
             for ball in &balls {
                 ball.draw();
 
@@ -359,6 +340,30 @@ async fn main() {
             for trace in traces {
                 draw_circle(trace.x, trace.y, 1., colors::BLUE);
             }
+        }
+
+        set_default_camera();
+        {
+            let mean_fps = Iterator::sum::<f32>(fps.iter()) / FPS_FRAMES as f32;
+            draw_text_ex(
+                &format!("fps : {}", 1. / mean_fps),
+                32.,
+                32.,
+                TextParams {
+                    font_size: 15,
+                    ..Default::default()
+                },
+            );
+
+            draw_text_ex(
+                &format!("Simulation speed : {}", frame_per_frame),
+                32.,
+                50.,
+                TextParams {
+                    font_size: 15,
+                    ..Default::default()
+                },
+            );
         }
 
         next_frame().await
