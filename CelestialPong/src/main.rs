@@ -19,9 +19,9 @@ extern crate rand;
 use crate::ball::*;
 use crate::quad_tree::*;
 
-const NB_BALLS: usize = 1;
+const NB_BALLS: usize = 35;
 const RADII: f32 = 10.;
-const BALL_MASS: f32 = 20.;
+const BALL_MASS: f32 = 2.;
 
 const GRAVITY: f32 = 15000.;
 const BODY_BOUNCYNESS: f32 = 0.9;
@@ -31,6 +31,8 @@ const MAX_START_ORBIT: f32 = 400.;
 
 const FPS_FRAMES: usize = 100;
 const TRACE_SIZE: usize = 1000;
+
+const SIMULATION_DT: f32 = 1. / 60.;
 
 fn damping(pos: Vec2, target: Vec2, dt: f32, elasticity: f32) -> Vec2 {
     return (target - pos) / elasticity * dt;
@@ -105,7 +107,7 @@ fn reset_balls(
         // let ball_speed = Vec2::from((rng.gen::<f32>() * 20. - 10., rng.gen::<f32>() * 20. - 10.));
         let ball_speed = get_orbital_velocity(&ball, &static_bodies[0]);
 
-        ball.set_velocity(ball_speed, 1. / 60.);
+        ball.set_velocity(ball_speed, SIMULATION_DT);
         // println!(
         //     "{:?} | (x:{},y:{})",
         //     ball.position - ball.prev_position,
@@ -138,6 +140,8 @@ async fn main() {
 
     let mut frame_per_frame: usize = 1;
 
+    let mut collided_balls = Vec::with_capacity(NB_BALLS);
+
     static_bodies.push(Ball::new(
         Vec2::new(0., 0.),
         Vec2::ZERO,
@@ -166,7 +170,7 @@ async fn main() {
 
         if is_key_down(KeyCode::S) {
             for ball in &mut balls {
-                ball.set_velocity(ball.velocity * 0.5, 1. / 60.);
+                ball.set_velocity(ball.velocity * 0.5, SIMULATION_DT);
             }
         }
 
@@ -179,7 +183,7 @@ async fn main() {
 
         if is_key_down(KeyCode::O) {
             for ball in &mut balls {
-                ball.set_velocity(get_orbital_velocity(ball, &static_bodies[0]), 1. / 60.);
+                ball.set_velocity(get_orbital_velocity(ball, &static_bodies[0]), SIMULATION_DT);
             }
         }
 
@@ -195,12 +199,13 @@ async fn main() {
         fps[fps_index] = dt;
         fps_index = (fps_index + 1) % FPS_FRAMES;
 
-        let dt = 1. / 60.;
+        let dt = SIMULATION_DT;
 
         quad_tree = QuadTree::new(tree_area);
         if !paused {
             for _ in 0..frame_per_frame {
                 // Updating ball position
+                collided_balls.clear();
                 for index in 0..balls.len() {
                     let ball = balls.get_mut(index).unwrap();
                     quad_tree.add(QuadTreeEntry::new(ball.position, index));
@@ -221,25 +226,35 @@ async fn main() {
                 }
 
                 // Colliding balls
-                for i in 0..balls.len() {
-                    let zone_check = balls[i].get_collision_area();
+                for index in 0..balls.len() {
+                    // Has ball already collided this frame
+                    if collided_balls.iter().any(|c| c == &index) {
+                        continue;
+                    }
+
+                    let zone_check = balls[index].get_collision_area();
                     let mut near_balls = Vec::new();
                     quad_tree.query_entries(&zone_check, &mut near_balls);
                     for entry in near_balls {
-                        if entry.payload == i {
+                        if entry.payload == index
+                            || collided_balls.iter().any(|c| c == &entry.payload)
+                        {
                             continue;
                         }
 
                         let other_ball_index = entry.payload;
 
-                        if balls[i].check_collision(&balls[other_ball_index]) {
-                            if i > other_ball_index {
-                                let (left, right) = balls.split_at_mut(i);
+                        if balls[index].check_collision(&balls[other_ball_index]) {
+                            if index > other_ball_index {
+                                let (left, right) = balls.split_at_mut(index);
                                 right[0].collide(&mut left[other_ball_index], dt);
                             } else {
                                 let (left, right) = balls.split_at_mut(other_ball_index);
-                                right[0].collide(&mut left[i], dt);
+                                right[0].collide(&mut left[index], dt);
                             }
+
+                            collided_balls.push(index);
+                            collided_balls.push(other_ball_index);
                         }
                     }
                 }
@@ -252,18 +267,22 @@ async fn main() {
                     for near in near_objects {
                         let ball = balls.get_mut(near.payload).unwrap();
                         if body.check_collision(&ball) {
-                            let delta = ball.position - body.position;
-                            if delta.dot(ball.velocity) < 0.
-                                && ball.velocity.length_squared() > 0.001
-                            {
-                                let delta = delta.normalize();
-                                ball.position = body.position + delta * (body.radius + ball.radius);
-                                ball.set_velocity(
-                                    (ball.velocity - 2. * delta.dot(ball.velocity) * delta)
-                                        * BODY_BOUNCYNESS,
-                                    dt,
-                                );
-                            }
+                            // BOUNCE
+                            // let delta = ball.position - body.position;
+                            // if delta.dot(ball.velocity) < 0.
+                            //     && ball.velocity.length_squared() > 0.001
+                            // {
+                            //     let delta = delta.normalize();
+                            //     ball.position = body.position + delta * (body.radius + ball.radius);
+                            //     ball.set_velocity(
+                            //         (ball.velocity - 2. * delta.dot(ball.velocity) * delta)
+                            //             * BODY_BOUNCYNESS,
+                            //         dt,
+                            //     );
+                            // }
+
+                            // DELETE
+                            balls.remove(near.payload);
                         }
                     }
                 }
@@ -282,14 +301,6 @@ async fn main() {
         let under = near_balls
             .into_iter()
             .find(|b| (balls[b.payload].position - mouse_pos).length_squared() < dist_check);
-
-        match under {
-            Some(entry) => {
-                let b = balls[entry.payload];
-                draw_circle_lines(b.position.x, b.position.y, b.radius, 2., colors::GOLD);
-            }
-            _ => {}
-        }
 
         if is_mouse_button_pressed(MouseButton::Left) {
             match under {
@@ -325,17 +336,17 @@ async fn main() {
 
                 // ball.get_collision_area().debug_draw(1., ball.color);
                 // Draw ideal orbit
-                let mut c = ball.color;
-                c.r = c.r - 10.;
-                draw_poly_lines(
-                    static_bodies[0].position.x,
-                    static_bodies[0].position.y,
-                    100,
-                    (static_bodies[0].position - ball.position).length(),
-                    0.,
-                    1.,
-                    c,
-                );
+                // let mut c = ball.color;
+                // c.r = c.r - 10.;
+                // draw_poly_lines(
+                //     static_bodies[0].position.x,
+                //     static_bodies[0].position.y,
+                //     100,
+                //     (static_bodies[0].position - ball.position).length(),
+                //     0.,
+                //     1.,
+                //     c,
+                // );
             }
 
             for body in &static_bodies {
@@ -348,6 +359,14 @@ async fn main() {
             for trace in traces {
                 draw_circle(trace.x, trace.y, 1., colors::BLUE);
             }
+
+            // match under {
+            //     Some(entry) => {
+            //         let b = balls[entry.payload];
+            //         draw_circle_lines(b.position.x, b.position.y, b.radius, 2., colors::GOLD);
+            //     }
+            //     _ => {}
+            // }
         }
 
         set_default_camera();
