@@ -105,8 +105,13 @@ fn reset_balls(
         // let ball_speed = Vec2::from((rng.gen::<f32>() * 20. - 10., rng.gen::<f32>() * 20. - 10.));
         let ball_speed = get_orbital_velocity(&ball, &static_bodies[0]);
 
-        ball.velocity = ball_speed;
-
+        ball.set_velocity(ball_speed, 1. / 60.);
+        // println!(
+        //     "{:?} | (x:{},y:{})",
+        //     ball.position - ball.prev_position,
+        //     ball.velocity.x,
+        //     ball.velocity.y
+        // );
         balls.push(ball);
     }
 }
@@ -161,7 +166,7 @@ async fn main() {
 
         if is_key_down(KeyCode::S) {
             for ball in &mut balls {
-                ball.velocity *= 0.5;
+                ball.set_velocity(ball.velocity * 0.5, 1. / 60.);
             }
         }
 
@@ -174,7 +179,7 @@ async fn main() {
 
         if is_key_down(KeyCode::O) {
             for ball in &mut balls {
-                ball.velocity = get_orbital_velocity(ball, &static_bodies[0]);
+                ball.set_velocity(get_orbital_velocity(ball, &static_bodies[0]), 1. / 60.);
             }
         }
 
@@ -208,6 +213,7 @@ async fn main() {
                     }
 
                     ball.update(dt, local_force);
+                    // ball.update_verlet(dt, local_force);
 
                     // Recode previous positions
                     traces[trace_index] = ball.position;
@@ -229,10 +235,10 @@ async fn main() {
                         if balls[i].check_collision(&balls[other_ball_index]) {
                             if i > other_ball_index {
                                 let (left, right) = balls.split_at_mut(i);
-                                right[0].collide(&mut left[other_ball_index]);
+                                right[0].collide(&mut left[other_ball_index], dt);
                             } else {
                                 let (left, right) = balls.split_at_mut(other_ball_index);
-                                right[0].collide(&mut left[i]);
+                                right[0].collide(&mut left[i], dt);
                             }
                         }
                     }
@@ -252,9 +258,11 @@ async fn main() {
                             {
                                 let delta = delta.normalize();
                                 ball.position = body.position + delta * (body.radius + ball.radius);
-                                ball.velocity = (ball.velocity
-                                    - 2. * delta.dot(ball.velocity) * delta)
-                                    * BODY_BOUNCYNESS;
+                                ball.set_velocity(
+                                    (ball.velocity - 2. * delta.dot(ball.velocity) * delta)
+                                        * BODY_BOUNCYNESS,
+                                    dt,
+                                );
                             }
                         }
                     }
@@ -301,7 +309,7 @@ async fn main() {
                 let ball = balls.get_mut(ball_index).unwrap();
                 let force = damping(ball.position, mouse_pos, dt, 0.001);
 
-                ball.velocity = force;
+                ball.set_velocity(force, dt);
             }
             _ => {}
         }
