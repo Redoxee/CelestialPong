@@ -19,8 +19,8 @@ extern crate rand;
 use crate::ball::*;
 use crate::quad_tree::*;
 
-const NB_BALLS: usize = 2;
-const RADII: f32 = 10.;
+const NB_BALLS: usize = 500;
+const RADII: f32 = 2.;
 const BALL_MASS: f32 = 2.;
 
 const GRAVITY: f32 = 15000.;
@@ -32,7 +32,7 @@ const MAX_START_ORBIT: f32 = 400.;
 const FPS_FRAMES: usize = 100;
 const TRACE_SIZE: usize = 1000;
 
-const SIMULATION_DT: f32 = 1. / 120.;
+const SIMULATION_DT: f32 = 1. / 300.;
 
 fn damping(pos: Vec2, target: Vec2, dt: f32, elasticity: f32) -> Vec2 {
     return (target - pos) / elasticity * dt;
@@ -41,6 +41,10 @@ fn damping(pos: Vec2, target: Vec2, dt: f32, elasticity: f32) -> Vec2 {
 fn get_gravity_force(ball: &Ball, body: &Ball) -> Vec2 {
     let delta = body.position - ball.position;
     return delta.normalize() * (body.mass * ball.mass) / delta.length().powf(2.) * GRAVITY;
+}
+
+fn get_gravity_radius_over_threshold(mass: f32, threshold: f32) -> f32 {
+    return (threshold / mass).sqrt();
 }
 
 fn get_orbital_velocity(b1: &Ball, b2: &Ball) -> Vec2 {
@@ -141,6 +145,7 @@ async fn main() {
     let mut frame_per_frame: usize = 1;
 
     let mut collided_balls = Vec::with_capacity(NB_BALLS);
+    let mut balls_marked_for_delete = Vec::with_capacity(NB_BALLS);
 
     static_bodies.push(Ball::new(
         Vec2::new(0., 0.),
@@ -282,7 +287,9 @@ async fn main() {
                             // }
 
                             // DELETE
-                            balls.remove(near.payload);
+                            if !balls_marked_for_delete.contains(&near.payload) {
+                                balls_marked_for_delete.push(near.payload);
+                            }
                         }
                     }
                 }
@@ -337,17 +344,17 @@ async fn main() {
                 // ball.get_collision_area().debug_draw(1., ball.color);
 
                 // Draw ideal orbit
-                let mut c = ball.color;
-                c.r = c.r - 10.;
-                draw_poly_lines(
-                    static_bodies[0].position.x,
-                    static_bodies[0].position.y,
-                    100,
-                    (static_bodies[0].position - ball.position).length(),
-                    0.,
-                    1.,
-                    c,
-                );
+                // let mut c = ball.color;
+                // c.r = c.r - 10.;
+                // draw_poly_lines(
+                //     static_bodies[0].position.x,
+                //     static_bodies[0].position.y,
+                //     100,
+                //     (static_bodies[0].position - ball.position).length(),
+                //     0.,
+                //     1.,
+                //     c,
+                // );
             }
 
             for body in &static_bodies {
@@ -393,6 +400,13 @@ async fn main() {
                 },
             );
         }
+
+        balls_marked_for_delete.sort_unstable();
+        for index in balls_marked_for_delete.iter().rev() {
+            balls.remove(*index);
+        }
+
+        balls_marked_for_delete.clear();
 
         next_frame().await
     }

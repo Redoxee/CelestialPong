@@ -84,7 +84,7 @@ impl Ball {
     // Based on https://www.vobarian.com/collisions/2dcollisions2.pdf
     // The individual steps from the document are commented
     pub fn collide(&mut self, other: &mut Ball, dt: f32) {
-        const HEAT_DISIPATION: f32 = 0.999;
+        const HEAT_DISIPATION: f32 = 0.5;
         let pos_diff = self.position - other.position;
 
         // 1
@@ -93,15 +93,17 @@ impl Ball {
 
         // 3
         let v1n = self.velocity.dot(unit_normal);
-        let v1t = self.velocity.dot(unit_tangent) * HEAT_DISIPATION;
+        let v1t = self.velocity.dot(unit_tangent);
         let v2n = other.velocity.dot(unit_normal);
-        let v2t = other.velocity.dot(unit_tangent) * HEAT_DISIPATION;
+        let v2t = other.velocity.dot(unit_tangent);
 
         // 5
-        let new_v1n =
-            (v1n * (self.mass - other.mass) + 2. * other.mass * v2n) / (self.mass + other.mass);
-        let new_v2n =
-            (v2n * (other.mass - self.mass) + 2. * self.mass * v1n) / (self.mass + other.mass);
+        let new_v1n = (v1n * (self.mass - other.mass) + 2. * other.mass * v2n)
+            / (self.mass + other.mass)
+            * HEAT_DISIPATION;
+        let new_v2n = (v2n * (other.mass - self.mass) + 2. * self.mass * v1n)
+            / (self.mass + other.mass)
+            * HEAT_DISIPATION;
 
         // 6
         let final_v1n = new_v1n * unit_normal;
