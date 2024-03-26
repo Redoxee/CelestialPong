@@ -68,7 +68,7 @@ impl QuadTreeEntry {
     }
 }
 
-const QUADTREE_SIZE: usize = 5;
+const QUADTREE_SIZE: usize = 2;
 
 #[derive(Clone, Debug)]
 pub struct QuadTree {

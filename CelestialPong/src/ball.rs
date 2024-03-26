@@ -5,6 +5,7 @@ use crate::quad_tree::{self, Rect};
 #[derive(Clone, Copy, Debug)]
 pub struct Ball {
     pub position: Vec2,
+    pub prev_position: Vec2,
     pub velocity: Vec2,
     pub radius: f32,
     pub mass: f32,
@@ -23,6 +24,7 @@ impl Ball {
     ) -> Ball {
         Ball {
             position,
+            prev_position: position - velocity,
             velocity,
             radius,
             mass,
@@ -58,7 +60,20 @@ impl Ball {
             self.velocity.y *= -1.;
         }
 
+        self.prev_position = self.position;
         self.position = pos + self.velocity * dt;
+    }
+
+    pub fn update_verlet(&mut self, dt: f32, acc: Vec2) {
+        let temp_pos = self.position;
+        self.position = self.position * 2. - self.prev_position + acc * dt * dt;
+        self.prev_position = temp_pos;
+        self.velocity = (self.position - self.prev_position) / dt;
+    }
+
+    pub fn set_velocity(&mut self, velocity: Vec2, dt: f32) {
+        self.prev_position = self.position + -velocity * dt;
+        self.velocity = velocity;
     }
 
     pub fn check_collision(&self, other: &Ball) -> bool {
@@ -68,7 +83,8 @@ impl Ball {
     // Does collision effect for both self and the other object
     // Based on https://www.vobarian.com/collisions/2dcollisions2.pdf
     // The individual steps from the document are commented
-    pub fn collide(&mut self, other: &mut Ball) {
+    pub fn collide(&mut self, other: &mut Ball, dt: f32) {
+        const HEAT_DISIPATION: f32 = 0.999;
         let pos_diff = self.position - other.position;
 
         // 1
@@ -77,9 +93,9 @@ impl Ball {
 
         // 3
         let v1n = self.velocity.dot(unit_normal);
-        let v1t = self.velocity.dot(unit_tangent);
+        let v1t = self.velocity.dot(unit_tangent) * HEAT_DISIPATION;
         let v2n = other.velocity.dot(unit_normal);
-        let v2t = other.velocity.dot(unit_tangent);
+        let v2t = other.velocity.dot(unit_tangent) * HEAT_DISIPATION;
 
         // 5
         let new_v1n =
@@ -99,8 +115,8 @@ impl Ball {
 
         // The if statement makes them not get stuck in each other
         if (self.velocity - other.velocity).dot(self.position - other.position) < 0. {
-            self.velocity = final_v1;
-            other.velocity = final_v2;
+            self.set_velocity(final_v1, dt);
+            other.set_velocity(final_v2, dt);
         }
     }
 }
