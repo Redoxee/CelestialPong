@@ -19,7 +19,7 @@ extern crate rand;
 use crate::ball::*;
 use crate::quad_tree::*;
 
-const NB_BALLS: usize = 35;
+const NB_BALLS: usize = 2;
 const RADII: f32 = 10.;
 const BALL_MASS: f32 = 2.;
 
@@ -32,7 +32,7 @@ const MAX_START_ORBIT: f32 = 400.;
 const FPS_FRAMES: usize = 100;
 const TRACE_SIZE: usize = 1000;
 
-const SIMULATION_DT: f32 = 1. / 60.;
+const SIMULATION_DT: f32 = 1. / 120.;
 
 fn damping(pos: Vec2, target: Vec2, dt: f32, elasticity: f32) -> Vec2 {
     return (target - pos) / elasticity * dt;
@@ -82,7 +82,7 @@ fn reset_balls(
 ) {
     balls.clear();
 
-    for i in 0..NB_BALLS {
+    for _ in 0..NB_BALLS {
         let position = random_orbital_pos(
             static_bodies[0].position,
             MIN_START_ORBIT,
@@ -217,8 +217,8 @@ async fn main() {
                         }
                     }
 
-                    ball.update(dt, local_force);
-                    // ball.update_verlet(dt, local_force);
+                    // ball.update(dt, local_force);
+                    ball.update_verlet(dt, local_force);
 
                     // Recode previous positions
                     traces[trace_index] = ball.position;
@@ -335,18 +335,19 @@ async fn main() {
                 ball.draw();
 
                 // ball.get_collision_area().debug_draw(1., ball.color);
+
                 // Draw ideal orbit
-                // let mut c = ball.color;
-                // c.r = c.r - 10.;
-                // draw_poly_lines(
-                //     static_bodies[0].position.x,
-                //     static_bodies[0].position.y,
-                //     100,
-                //     (static_bodies[0].position - ball.position).length(),
-                //     0.,
-                //     1.,
-                //     c,
-                // );
+                let mut c = ball.color;
+                c.r = c.r - 10.;
+                draw_poly_lines(
+                    static_bodies[0].position.x,
+                    static_bodies[0].position.y,
+                    100,
+                    (static_bodies[0].position - ball.position).length(),
+                    0.,
+                    1.,
+                    c,
+                );
             }
 
             for body in &static_bodies {
