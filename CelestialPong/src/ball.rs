@@ -22,10 +22,9 @@ impl Ball {
         color: Color,
         playing_field: Rect,
     ) -> Ball {
-        const FAKE_DT: f32 = 1. / 60.;
         Ball {
             position,
-            prev_position: position - velocity * FAKE_DT,
+            prev_position: position - velocity,
             velocity,
             radius,
             mass,
@@ -73,7 +72,7 @@ impl Ball {
     }
 
     pub fn set_velocity(&mut self, velocity: Vec2, dt: f32) {
-        self.prev_position = self.position + (self.position - velocity) * dt;
+        self.prev_position = self.position + -velocity * dt;
         self.velocity = velocity;
     }
 
